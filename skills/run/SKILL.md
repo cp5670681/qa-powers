@@ -87,7 +87,7 @@ cleanup:              # 仅失败时填
 | passed | 所有断言通过 |
 | failed | 任一断言未通过（UI 实际 ≠ 预期，或 DB 数据不符） |
 | blocked | 环境故障：登录失败、DB 连不上、服务 5xx/超时。**不算用例失败** |
-| skipped | 依赖的前置 case blocked、或用户指定跳过 |
+| skipped | 用户指定跳过 |
 
 **环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。
 
