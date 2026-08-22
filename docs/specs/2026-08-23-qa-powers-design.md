@@ -1,11 +1,11 @@
-# ui-powers 设计文档
+# qa-powers 设计文档
 
 日期：2026-08-23
 状态：待审阅
 
 ## 概述
 
-ui-powers 是一个 Claude Code 插件，让测试人员用 AI 完成 UI 自动化测试的完整闭环：**需求 → 用例 → 执行 → 沉淀 → 报告**。参考 obra/superpowers 的结构（skill 套件 + 子命令 + 交互式流程 + SessionStart hook 引导）。
+qa-powers 是一个 Claude Code 插件，让测试人员用 AI 完成 UI 自动化测试的完整闭环：**需求 → 用例 → 执行 → 沉淀 → 报告**。参考 obra/superpowers 的结构（skill 套件 + 子命令 + 交互式流程 + SessionStart hook 引导）。
 
 核心诉求：
 
@@ -22,36 +22,36 @@ ui-powers 是一个 Claude Code 插件，让测试人员用 AI 完成 UI 自动�
 
 ```
 ┌─────────────────────────────────────────────┐
-│ ui-powers skills（方法论层，纯提示词）        │
+│ qa-powers skills（方法论层，纯提示词）        │
 │  需求澄清 → 用例设计 → 执行 → 沉淀 → 报告     │
 ├──────────────┬──────────────┬───────────────┤
 │ playwright-cli│   usql       │ git + 代码仓库 │
 │ （浏览器执行） │（数据三件套） │（FE/BE 参考）  │
 ├──────────────┴──────────────┴───────────────┤
-│ .ui-powers/ 测试资产目录（用例/脚本/报告/配置）│
+│ .qa-powers/ 测试资产目录（用例/脚本/报告/配置）│
 └─────────────────────────────────────────────┘
 ```
 
 关键决策：
 
 - **纯 Skill 插件，无自研运行时代码**。playwright-cli（microsoft/playwright-cli）本身就是为 AI agent 设计的执行器：跨命令持久浏览器会话、每条命令后返回页面快照、`show` 仪表盘供人实时观看、`state-save/load` 沉淀登录态、tracing/video 取证。无需再写 driver。
-- **不重复浏览器原语层**。playwright-cli 自带官方 skill（`playwright-cli install --skills`），ui-powers 的 skill 引用它，专注方法论。
+- **不重复浏览器原语层**。playwright-cli 自带官方 skill（`playwright-cli install --skills`），qa-powers 的 skill 引用它，专注方法论。
 - **回归走标准 Playwright Test**。沉淀脚本用 `npx playwright test` 执行，白拿 HTML 报告、trace 回放、重试机制。
 
 ## 子命令集
 
 | 子命令 | 作用 | 触发方式 |
 |---|---|---|
-| `/ui-powers:init` | 初始化 `.ui-powers/` 目录 + 配置文件 | 手动 |
-| `/ui-powers:design` | 需求 → 用例（交互式，含代码影响分析） | 手动或关键词 |
-| `/ui-powers:run` | 执行用例（回归模式 / 首跑模式） | 手动或关键词 |
-| `/ui-powers:report` | 汇总执行结果生成报告 | run 结束自动引导 |
-| `using-ui-powers` | 入口元技能：识别测试意图，路由到对应阶段 | SessionStart hook 自动注入 |
+| `/qa-powers:init` | 初始化 `.qa-powers/` 目录 + 配置文件 | 手动 |
+| `/qa-powers:design` | 需求 → 用例（交互式，含代码影响分析） | 手动或关键词 |
+| `/qa-powers:run` | 执行用例（回归模式 / 首跑模式） | 手动或关键词 |
+| `/qa-powers:report` | 汇总执行结果生成报告 | run 结束自动引导 |
+| `using-qa-powers` | 入口元技能：识别测试意图，路由到对应阶段 | SessionStart hook 自动注入 |
 
 ## 核心数据流
 
 ```
-需求(文本/Jira/Confluence) ──design──▶ 用例 md (.ui-powers/cases/)
+需求(文本/Jira/Confluence) ──design──▶ 用例 md (.qa-powers/cases/)
                                           │
                               run ◀──────┘
                     ┌─── 有沉淀脚本 ──▶ npx playwright test ──▶ HTML 报告
@@ -59,15 +59,15 @@ ui-powers 是一个 Claude Code 插件，让测试人员用 AI 完成 UI 自动�
                                         │
                           run 结束引导沉淀：命令日志 ──▶ Playwright Test 脚本
                                         │
-                              report ──▶ Markdown 报告 (.ui-powers/reports/)
+                              report ──▶ Markdown 报告 (.qa-powers/reports/)
 ```
 
 ## 目录结构与资产格式
 
-被测项目内的 `.ui-powers/` 目录：
+被测项目内的 `.qa-powers/` 目录：
 
 ```
-.ui-powers/
+.qa-powers/
 ├── config.yaml              # 环境与仓库配置（唯一配置入口）
 ├── cases/                   # 用例库（AI 生成 + 人工提供，同一格式）
 │   └── ORD-1234-checkout/
@@ -94,9 +94,9 @@ ui-powers 是一个 Claude Code 插件，让测试人员用 AI 完成 UI 自动�
 env: test
 base_url: https://test.example.com
 auth:
-  username: ${UIP_TEST_USER}
-  password: ${UIP_TEST_PASS}
-  state_file: .ui-powers/auth-state.json
+  username: ${QAP_TEST_USER}
+  password: ${QAP_TEST_PASS}
+  state_file: .qa-powers/auth-state.json
 repos:
   frontend:
     path: ~/rcc/web-app
@@ -107,7 +107,7 @@ repos:
     branch: feature/ORD-1234
     base: main
 db:
-  usql_args: "mysql://user:${UIP_DB_PASS}@host:3306/mydb"
+  usql_args: "mysql://user:${QAP_DB_PASS}@host:3306/mydb"
 ```
 
 ### 用例格式
@@ -189,24 +189,24 @@ requires_data: 已上架商品 x1（造数见 setup.sql）
 
 Markdown 报告：通过率、每条失败用例的"步骤-预期-实际-证据链接-初步原因（关联 diff 改动点）"；回归模式附 HTML 报告路径。
 
-## ui-powers 自身结构（插件仓库）
+## qa-powers 自身结构（插件仓库）
 
 参考 superpowers 仓库布局：
 
 ```
-ui-powers/                   # 本插件仓库（现 qa-powers 目录，待更名）
+qa-powers/                   # 本插件仓库
 ├── skills/
-│   ├── using-ui-powers/SKILL.md
+│   ├── using-qa-powers/SKILL.md
 │   ├── init/SKILL.md
 │   ├── design/SKILL.md
 │   ├── run/SKILL.md
 │   └── report/SKILL.md
 ├── hooks/
-│   └── hooks.json           # SessionStart 注入 using-ui-powers
+│   └── hooks.json           # SessionStart 注入 using-qa-powers
 ├── plugin.json              # Claude Code 插件清单
 └── tests/                   # 示例被测项目（冒烟测试用）
     ├── web/                 # 简单 web 页面
-    └── .ui-powers/          # 演示配置
+    └── .qa-powers/          # 演示配置
 ```
 
 ## 测试策略
