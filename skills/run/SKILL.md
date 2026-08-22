@@ -47,7 +47,7 @@ usql "$QAP_DB_URL" -f <setup.sql 路径>
 - DB 断言（预期含 DB: 时）：
 
 ```bash
-usql "$QAP_DB_URL" -c "SELECT ... FROM orders WHERE ..." -W
+usql "$QAP_DB_URL" -c "SELECT ... FROM orders WHERE ..."
 ```
 
 比对实际值与预期值，查询与结果追加进 commands.log。
