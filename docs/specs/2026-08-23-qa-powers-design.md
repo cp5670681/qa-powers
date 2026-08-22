@@ -55,7 +55,10 @@ qa-powers 是一个 Claude Code 插件，让测试人员用 AI 完成 UI 自动�
 
 - **纯 Skill 插件，无自研运行时代码**。playwright-cli（microsoft/playwright-cli）本身就是为 AI agent 设计的执行器：跨命令持久浏览器会话、每条命令后返回页面快照、`show` 仪表盘供人实时观看、`state-save/load` 沉淀登录态、tracing/video 取证。
 - **不重复浏览器原语层**。playwright-cli 自带官方 skill，qa-powers 的 skill 引用它，专注方法论。
-- **run = deterministic，explore = autonomous**。run 验证已知答案，执行方式必须确定，禁止 AI 临场"优化"路径（否则回归不稳定）；explore 寻找未知问题，允许 AI 自由发挥。这条边界写进对应 skill 的硬约束。
+- **run 有两个子模式，确定性边界不同**：
+  - `scripted-run`（回归，Playwright Test）= **deterministic**，完全按脚本执行
+  - `guided-run`（首跑，playwright-cli 驱动）= **AI-assisted**：按 case 步骤执行，**业务意图固定，执行细节允许适配**——允许 selector 修正/元素定位调整（如 `e12` → `getByRole('button', {name: '提交订单'})`），**禁止修改业务路径**（如把"提交订单"改成直接访问 `/orders/success`）。此规则写进 run skill 硬约束
+  - `explore` = **autonomous**，允许 AI 自由发挥寻找未知问题
 - **回归走标准 Playwright Test**。沉淀脚本用 `npx playwright test` 执行，白拿 HTML 报告、trace 回放、重试机制。
 - **lazy loading**。SessionStart hook 只注入一句话路由提示（"qa-powers available, 需要测试时读 using-qa-powers"），各阶段 skill 按需加载，不预先塞入上下文。
 
@@ -150,6 +153,7 @@ Test Cases: 18 | PASS: 14 | FAIL: 2 | BLOCKED: 1 | SKIPPED: 1
 ```
 .qa-powers/
 ├── config.yaml              # 环境与仓库配置（唯一配置入口）
+├── manifest.yaml            # 资产清单 + schema version（插件升级迁移依据）
 ├── cases/                   # 用例库（AI 生成 + 人工提供，同一格式）
 │   └── ORD-1234-checkout/
 │       ├── case-01.md       # 纯业务用例（定义+步骤+预期，不含执行细节）
@@ -199,6 +203,16 @@ db:
 
 **qa-powers 绝不 checkout 分支**。代码分析时读工作区现状：`git branch --show-current` + `git diff <base>...HEAD`，由用户自己管理分支和未提交修改。
 
+**manifest.yaml**（schema 版本与资产索引，插件升级时判断 `.qa-powers/` 数据格式并自动迁移）：
+
+```yaml
+version: 1
+project: checkout
+latest_run: 2026-08-23-1430
+```
+
+**用例版本**：case front-matter 带 `version` / `updated_at`；stabilize 生成的 spec 同步记录 `case_id` + `case_version`（spec 文件头注释），报告显示 `case-01 v2 PASS` 而非裸 id。
+
 ### 用例与执行分离
 
 用例 md 只描述业务事实（目标、前置、步骤、预期），**不包含执行细节**（state-load、会话名、重试策略等）。执行时 AI 动态生成 execution plan，记录在 evidence 的 `execution.md`——实际做了什么、为什么这么执行、哪里发生偏差。业务用例不被执行细节污染，后续 debug 直接读结构化 execution.md。
@@ -206,9 +220,12 @@ db:
 ```markdown
 ---
 id: case-01
+version: 2
+updated_at: 2026-08-23
 title: 正常下单流程
 priority: P0
 requirement: ORD-1234
+script: null                # stabilize 后指向 scripts/ORD-1234-checkout.spec.ts
 covers:
   requirements: [R1]
   changes: [frontend:src/checkout/OrderForm.tsx, backend:OrderController.create]
@@ -216,6 +233,7 @@ data:
   setup: setup.sql
   cleanup: cleanup.sql
   isolation: case
+  fixtures: [product, user]  # 语义化数据依赖，预留演化空间（未来 factories），不锁死 SQL
 ---
 
 ## 前置
@@ -250,8 +268,34 @@ setup（usql 造数）→ snapshot/记录生成的 ID → test → assert → cl
 |---|---|
 | PASS | 预期达成 |
 | FAIL | 预期未达成（疑似 bug 或用例错误） |
-| BLOCKED | 环境故障（登录失败/DB 连不上/服务 500），不算 FAIL |
+| BLOCKED | 环境故障，不算 FAIL（reason 细分见下） |
 | SKIPPED | 前置 case 失败导致跳过，或用户指定跳过 |
+
+**BLOCKED reason 结构化**（报告可按 code 统计，而不是笼统的"环境问题 N 个"）：
+
+```yaml
+status: blocked
+reason:
+  category: environment
+  code: login_expired        # 预定义：login_expired / browser_unavailable /
+  message: login state expired  # service_unavailable / database_unavailable /
+                               # network_error / dependency_unavailable
+```
+
+**cleanup 失败不污染用例结果**：业务断言 PASS + cleanup FAIL 时，case status 仍为 PASS，cleanup 单独记录状态，run 整体标 DEGRADED：
+
+```yaml
+status: passed
+cleanup:
+  status: failed
+  reason: delete_failed
+```
+
+报告显示 `✓ Case PASS / ⚠ Cleanup FAILED`。
+
+### result.yaml 是机器契约
+
+result.yaml 是 run 与 report/debug/stabilize 之间的**稳定接口**——后续流程只读 result.yaml 做状态判断，不解析 commands.log/execution.md（后者仅作 evidence 与解释）。这样未来更换浏览器执行工具，report/debug 不受影响。
 
 ### run 级 result.yaml
 
@@ -303,21 +347,27 @@ case 级 result.yaml 额外含预期/实际值与证据引用（screenshot/trace
 
 ### design（交互重点阶段）
 
+支持两种运行方式：**首次设计**（新需求从零生成用例）和**变化检测**（增量维护，见下）。
+
 1. 读需求：文本 / Jira key / Confluence 链接（atlassian MCP），拆出需求点 R1/R2/...
 2. **代码影响分析（强制步骤）**：各仓库 `git diff <base>...HEAD`，产出改动点清单 D1/D2/...（页面/组件、接口、SQL、配置），写入 meta.yaml
 3. 逐条澄清（一次一个问题）：不明确的业务规则、验收标准、边界情况
 4. 生成用例：正常流 + 每个 D 至少 1 条 + 边界/异常；标注 covers（R + D 双维度）
 5. 用户确认用例集 → 写入 cases/<模块>/
 
-### run（deterministic）
+**变化检测（增量模式）**：需求不变但代码 diff 变了时，比对旧 meta.yaml 与新 diff 做 coverage impact analysis，产出建议：哪些 case 需新增/修改/废弃（如"InventoryService#reserve 新改动，C02 相关但未覆盖并发库存，建议新增 C07"）。qa-powers 从"AI 自动写测试"升级为"AI 持续维护测试资产"。
 
-- **回归模式**（有对应 spec.ts）：直接 `npx playwright test <spec>`，读 HTML 报告结果
-- **首跑模式**（无脚本）：
+### run（scripted-run = deterministic，guided-run = AI-assisted）
+
+- **scripted-run**（有对应 spec.ts）：直接 `npx playwright test <spec>`，读 HTML 报告结果
+- **guided-run**（无脚本）：按 case 步骤逐步执行，业务意图固定、执行细节允许适配（见确定性边界）
   1. 逐条 case：usql 前置造数并记录 ID → `playwright-cli -s=<模块>` 会话执行 → 预期环节 UI 断言看快照、DB 断言 usql 查库比对 → cleanup
   2. 每步对照快照检查与预期一致性；开 tracing；关键节点截图；命令追加写入 commands.log
   3. 生成 execution.md（执行计划 + 偏差记录）
   4. 失败/阻塞按状态分级记录，失败不中断整体（环境故障除外——停止 run，全部未跑 case 标 BLOCKED）
 - run 结束产出 result.yaml，引导进入 report / stabilize / debug
+
+**人工接管点**：guided-run 和 explore 在关键节点（意外弹窗、疑似 bug、用例失败）暂停询问：Pause / Take control（人直接操作有头浏览器，配合 `playwright-cli show`）/ Resume / Abort。
 
 ### explore（autonomous）
 
@@ -334,9 +384,13 @@ case 级 result.yaml 额外含预期/实际值与证据引用（screenshot/trace
   ↓ 人工确认后保存到 scripts/
 ```
 
-预览确认（Generate / Edit / Skip）：
+预览确认前先给出**稳定性评分**（帮助判断是否值得沉淀）：
 
 ```
+Stability Score: 92/100 — Recommended for regression
+  locator stability  40/40   data isolation  20/20
+  assertions         20/20   hardcoded waits   5/10
+  network dependency   7/10
 case-01: 12 steps, 8 stable locators, 2 DB assertions
 [Y] Generate  [E] Edit  [N] Skip
 ```
@@ -349,7 +403,7 @@ case-01: 12 steps, 8 stable locators, 2 DB assertions
 
 ### report
 
-Markdown 报告：四态统计 + 三层 coverage（Requirement/Diff/Case）+ 每条失败用例的"步骤-预期-实际-证据链接-初步原因"；回归模式附 HTML 报告路径。
+Markdown 报告：四态统计（含 BLOCKED 按 code 细分、DEGRADED 标记）+ 三层 coverage（Requirement/Diff/Case）+ 每条失败用例的"步骤-预期-实际-证据链接-初步原因"；scripted-run 附 HTML 报告路径。
 
 ## qa-powers 自身结构（插件仓库）
 
@@ -377,10 +431,10 @@ qa-powers/
 
 | 版本 | 内容 |
 |---|---|
-| V0.1 | init + doctor + design + run（首跑/回归）+ report，支持 playwright-cli + usql |
-| V0.2 | + explore |
-| V0.3 | + stabilize（playwright-cli → Playwright Test，稳定 locator 生成） |
-| V0.4 | + debug（UI + DB + Code + Git diff + Trace 自动分析） |
+| V0.1 | init + doctor + design（首次）+ run（仅 guided-run）+ report；限定 1 FE repo + 1 BE repo + 1 DB + 单 case 隔离 |
+| V0.2 | + explore（含人工接管点） |
+| V0.3 | + stabilize（稳定 locator、稳定性评分、script 字段关联）→ 解锁 scripted-run 回归模式 |
+| V0.4 | + debug（UI + DB + Code + Git diff + Trace 自动分析）；design 变化检测（增量模式） |
 
 ## 测试策略
 
