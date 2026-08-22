@@ -58,8 +58,8 @@ qa-powers skills（方法论层，纯提示词，无自研运行时）
 env: test
 base_url: https://test.example.com
 auth:
-  username: ${QAP_TEST_USER}
-  password: ${QAP_TEST_PASS}
+  username_env: QAP_TEST_USER
+  password_env: QAP_TEST_PASS
   state_file: .qa-powers/auth-state.json
 repos:
   frontend: { path: ~/rcc/web-app, base: main }
