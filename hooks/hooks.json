@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[qa-powers] available. 用户提到 UI 测试/设计用例/跑用例/测试报告时，先读取 using-qa-powers skill。'"
+          }
+        ]
+      }
+    ]
+  }
+}

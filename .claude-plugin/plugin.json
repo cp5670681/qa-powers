@@ -1,0 +1,16 @@
+{
+  "name": "qa-powers",
+  "description": "AI 驱动的 UI 自动化测试技能库：需求 → 用例 → 执行（playwright-cli + usql）→ 报告",
+  "version": "0.1.0",
+  "author": {
+    "name": "qa-powers contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "qa",
+    "testing",
+    "ui-automation",
+    "playwright",
+    "usql"
+  ]
+}
