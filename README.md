@@ -38,8 +38,8 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 ### 安装插件
 
 ```bash
-# 在 Claude Code 会话中（本仓库 clone 到本地后）
-/plugin marketplace add <本仓库路径>
+# 在 Claude Code 会话中
+/plugin marketplace add https://github.com/cp5670681/qa-powers
 /plugin install qa-powers@qa-powers
 ```
 
@@ -84,7 +84,6 @@ skills/          4 个工作流 skill + 1 个入口路由
 hooks/           SessionStart 提示 hook
 scripts/         validate.sh——插件结构自检
 tests/demo/      本地冒烟用被测项目（Node + sqlite3，无其他依赖）
-docs/specs/      设计文档（MVP 边界、后续演进）
 ```
 
 ## 安全声明
