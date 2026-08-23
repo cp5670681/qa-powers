@@ -62,6 +62,7 @@ priority: P0
 requirement: ORD-1234
 covers: [D1, D2]          # meta.yaml 里的改动点 id
 account: admin            # 多账号时使用的账号名（config auth.accounts 的 key）；单账号/默认账号可省略
+depends_on: []            # 依赖的前置用例 id；无依赖（可并发）时省略此行
 data: { setup: setup.sql, cleanup: cleanup.sql }   # 无 DB 需求则删除
 ---
 
@@ -80,6 +81,7 @@ data: { setup: setup.sql, cleanup: cleanup.sql }   # 无 DB 需求则删除
 用例规则：
 - 步骤是**业务语言**（"点击去结算"），不含执行细节（selector、会话名）
 - 预期必须可判定：有明确文本/状态/数据，不写"页面正常"
+- **依赖声明（供并发执行）**：用例间共享可变测试数据（同一条记录的造数/消耗/清理）、或存在业务先后关系时，用 frontmatter `depends_on: [case-XX]` 声明前置；**无依赖的用例不写此字段**（即视为可并发）。判定口径：操作同一行数据/同一库存/同一账号互斥状态 → 有依赖；只读、各自独立数据、不同账号 → 无依赖
 - **预期可达性审查（强制）**：每条 UI 预期对照改动的组件代码确认 UI 上可触发。重点检查：控件是否有 `clearable`/`disabled`（能否清空/操作）、输入框 `maxlength`（长度校验是否被前端拦截）、默认值是否总有值（拦截分支是否可达）。UI 不可达的拦截分支不写成用例预期，可在 meta.yaml 或报告备注中标注为"防御性代码，UI 不可达"
 - 需要造数/清理时，同目录写 setup.sql / cleanup.sql（幂等；造数 SQL 用 `INSERT ... ` 并注明如何取回生成的 ID）
 

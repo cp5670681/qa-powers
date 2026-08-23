@@ -12,17 +12,22 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(mkdir:*), Read, Grep, 
 2. **绝不 checkout 被测仓库**
 3. 密码/连接串只从环境变量读
 4. **页面 URL 禁止猜测**：从 config `repos.frontend.path` 的路由代码推导（router 配置 / 页面组件的 route 定义），必要时前后端代码都可参考（如定位元素结构、确认接口行为），但只读，不修改
+5. **并发模式附加约束**：并发执行中禁止 `state-save`（多会话共读登录态文件，写会互相踩）；DB 写操作（造数/清理）只允许出现在声明了 `depends_on` 的用例中，无依赖用例只做只读断言；每个 subagent 只能操作自己的 `-s=qap-<case-id>` 会话
 
 ## 0. 准备
 
 1. 读 `.qa-powers/config.yaml`
 2. `run_id=$(date +%Y-%m-%d-%H%M)`；`mkdir -p .qa-powers/evidence/$run_id`
 3. **建立路由映射**：用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义，得到「页面名 → URL」。用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
-4. 加载登录态并开浏览器（读 config 的 browser 段）：`playwright-cli open <base_url> --browser <channel> [--headed]` → `playwright-cli state-load <auth.state_file 或 auth.default 账号的 state_file>` → `playwright-cli goto <base_url>`，确认已登录（未登录 → 整个 run BLOCKED，走环境故障流程）
-5. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
-6. 用户指定跑哪些 case（默认 cases/ 下全部，按 priority 降序）
+4. **执行模式选择（AskUserQuestion）**：
+   - 顺序 / 并发。并发时再问并发上限（默认 3，可选 2/3/4——每个 worker 是一个独立浏览器实例）
+   - **有头 / 无头（两种模式都问）**：推荐默认**无头**（证据靠截图/快照，无头更快更稳、多开不抢资源）；有头用于演示或排查单条 case 时选
+   - 选择记入 commands.log 与 run 级 result.yaml（`mode: sequential|parallel`、`headed: true|false`、`workers: N`）
+5. 加载登录态并开浏览器（顺序模式）：`playwright-cli open <base_url> --browser <channel> [--headed]` → `playwright-cli state-load <auth.state_file 或 auth.default 账号的 state_file>` → `playwright-cli goto <base_url>`，确认已登录（未登录 → 整个 run BLOCKED，走环境故障流程）
+6. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
+7. 用户指定跑哪些 case（默认 cases/ 下全部，按 priority 降序）
 
-## 1. 逐条 case 执行
+## 1. 逐条 case 执行（顺序模式）
 
 对每条 case，在其证据目录 `evidence/$run_id/<case-id>/` 下工作（先 mkdir，并建 screenshots/）：
 
@@ -94,7 +99,34 @@ cleanup:              # 仅失败时填
   detail: "delete from orders where id=... 超时"
 ```
 
-## 2. 状态判定规则
+## 2. 并发执行（依赖图调度，参考 superpowers subagent-driven-development 模式）
+
+选并发模式时，主会话只做 **orchestrator**（分组/派发/收集），不亲自操作浏览器：
+
+### a. 建依赖图
+
+- 每条入选 case 用 TaskCreate 建任务；case frontmatter 的 `depends_on` 映射为 TaskUpdate 的 `blockedBy`
+- 无 `depends_on` 的用例之间不建依赖（即全部同时可跑）
+- 依赖声明的用例若前置未入选/已失败 → 该 case 标 skipped（reason 注明前置缺失）
+
+### b. 派发循环
+
+- 维持在跑 subagent 数 ≤ 用户选的并发上限；每有空位，从「pending 且无 blockedBy」的用例中按 priority 派发
+- 每条 case spawn 一个 general-purpose subagent（一次消息里可同时派多个），prompt **必须自包含**：
+  1. 用例全文 + 测试数据（具体 ID/账号等，subagent 没有主会话上下文）
+  2. base_url、登录态文件路径、浏览器 channel/headless 选择
+  3. **会话隔离**：所有 playwright-cli 命令一律带 `-s=qap-<case-id>`，禁止操作其他会话
+  4. 执行协议：snapshot→按语义操作→重试 1 次；瞬态断言降级；截图与 commands.log 写入自己的 evidence 目录；结束幂等关闭自己的会话（close 报 not open 可忽略）
+  5. 产出：按 case 级 result.yaml 模板写入 `evidence/<run-id>/<case-id>/result.yaml`，并在返回消息里报告一行结果摘要
+  6. 禁止：state-save、checkout 被测仓库、改用例业务路径
+- subagent 返回后：校验 result.yaml 存在且结构合法（缺失/畸形 → blocked，reason 注明 subagent 未产出有效结果）；TaskUpdate 完成，释放后继依赖
+
+### c. 故障与收束
+
+- **2 个在跑用例因同类环境原因 blocked → 停止派发新 subagent**，未开始的全部标 blocked（reason 同），等在跑的收尾
+- 全部结束后进入收尾（§3），run 级 result.yaml 增加 `mode: parallel`、`workers: N`
+
+## 3. 状态判定规则
 
 | 状态 | 判定 |
 |---|---|
@@ -105,7 +137,7 @@ cleanup:              # 仅失败时填
 
 **环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。
 
-## 3. 收尾
+## 4. 收尾
 
 1. `playwright-cli tracing-stop`、`playwright-cli close`
 2. 写 run 级 `evidence/$run_id/result.yaml`：
@@ -113,6 +145,8 @@ cleanup:              # 仅失败时填
 ```yaml
 run_id: 2026-08-23-1430
 module: ORD-1234-checkout
+mode: parallel        # sequential | parallel
+workers: 3            # 并发模式时有效
 cases:
   - case: case-01
     status: passed
