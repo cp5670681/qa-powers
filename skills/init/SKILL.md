@@ -12,6 +12,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*),
 
 - base_url（被测系统地址）
 - 登录方式（用户名密码表单 / 免登录）→ 用户名、密码的**环境变量名**（不收明文，提示用户写入 shell 配置）
+- **多账号**：是否需要按权限测试多个账号（如管理员/普通用户/只读）。需要则为每个账号收集：账号名（如 admin/buyer/viewer）+ 该账号的环境变量名，每个账号沉淀独立登录态文件；单账号时沿用 auth 顶层写法
 - 浏览器渠道：系统 Chrome / 系统 Edge / 内置 chromium（默认系统 Chrome，避免不必要的浏览器下载）
 - 运行模式：有头 / 无头（默认有头，便于用户观察执行过程）
 - 前端仓库绝对路径 + 基线分支（默认 main）
@@ -44,10 +45,16 @@ base_url: <收集值>
 browser:
   channel: chrome        # chrome | msedge | chromium
   headed: true           # 有头模式
-auth:
+auth:                    # 单账号写法（向后兼容）
   username_env: QAP_TEST_USER
   password_env: QAP_TEST_PASS
   state_file: .qa-powers/auth-state.json
+# 多账号写法：auth 顶层只有 default + accounts
+# auth:
+#   default: admin       # 不指定 account 的用例用哪个账号
+#   accounts:
+#     admin: { username_env: QAP_ADMIN_USER, password_env: QAP_ADMIN_PASS, state_file: .qa-powers/auth-admin.json }
+#     buyer: { username_env: QAP_BUYER_USER, password_env: QAP_BUYER_PASS, state_file: .qa-powers/auth-buyer.json }
 repos:
   frontend: { path: <收集值>, base: <基线分支> }
   backend:  { path: <收集值>, base: <基线分支> }   # 无则删除此行
@@ -59,10 +66,14 @@ db:
 
 ## 5. 沉淀登录态（免登录跳过）
 
+对每个账号（单账号即默认账号）：
+
 1. `playwright-cli open <base_url> --browser <config的channel> --<headed时加 --headed>`
-2. `playwright-cli snapshot` 找到登录入口，引导完成登录（凭据从环境变量读，不要让用户在对话里发明文）
-3. 登录成功后：`playwright-cli state-save .qa-powers/auth-state.json`
-4. `playwright-cli close`
+2. `playwright-cli snapshot` 找到登录入口，引导完成登录（凭据从该账号的环境变量读，不要让用户在对话里发明文）
+3. 登录成功后：`playwright-cli state-save <该账号的 state_file>`
+4. `playwright-cli close`（每个账号登录完关一次，避免会话串号）
+
+多账号提示：各账号凭据环境变量名不能相同；登录态文件按账号分文件存。
 
 ## 6. 收尾
 

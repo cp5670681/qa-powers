@@ -18,13 +18,15 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(mkdir:*), Read, Grep, 
 1. 读 `.qa-powers/config.yaml`
 2. `run_id=$(date +%Y-%m-%d-%H%M)`；`mkdir -p .qa-powers/evidence/$run_id`
 3. **建立路由映射**：用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义，得到「页面名 → URL」。用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
-4. 加载登录态并开浏览器（读 config 的 browser 段）：`playwright-cli open <base_url> --browser <channel> [--headed]` → `playwright-cli state-load .qa-powers/auth-state.json` → `playwright-cli goto <base_url>`，确认已登录（未登录 → 整个 run BLOCKED，走环境故障流程）
+4. 加载登录态并开浏览器（读 config 的 browser 段）：`playwright-cli open <base_url> --browser <channel> [--headed]` → `playwright-cli state-load <auth.state_file 或 auth.default 账号的 state_file>` → `playwright-cli goto <base_url>`，确认已登录（未登录 → 整个 run BLOCKED，走环境故障流程）
 5. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
 6. 用户指定跑哪些 case（默认 cases/ 下全部，按 priority 降序）
 
 ## 1. 逐条 case 执行
 
 对每条 case，在其证据目录 `evidence/$run_id/<case-id>/` 下工作（先 mkdir，并建 screenshots/）：
+
+**多账号切换**：case frontmatter 声明了 `account:` 且与当前已加载账号不同时，先切换：`playwright-cli state-load <该账号的 state_file>` → `playwright-cli goto <base_url>` → snapshot 确认登录身份已切换（页面上能看到当前用户标识时核对）。切换失败/登录态失效 → 该 case 标 blocked（reason 注明账号与失效情况），并提示用户对该账号重跑 `qa-powers:init` 步骤 5 重新沉淀登录态。切换动作记入 commands.log。
 
 ### a. 造数（有 data.setup 时）
 
@@ -71,6 +73,7 @@ cleanup 失败：在 case 级 result.yaml 的 cleanup 段记录，**不改变用
 ```yaml
 case: case-01
 title: 正常下单流程     # 取自 case frontmatter
+account: admin          # 取自 case frontmatter（多账号时记录实际使用的账号；单账号省略）
 covers:                 # 取自 case frontmatter，供 report 展示覆盖改动点
   - frontend:src/checkout/OrderForm.tsx
   - backend:OrderController.create

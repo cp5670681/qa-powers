@@ -48,6 +48,8 @@ changes:
 
 对以下内容不明确时逐条问：业务规则、验收标准、边界情况（空值/极值/并发）、权限差异。每个问题给选项。用户答"差不多就行"时按行业常规约定并在用例里标注假设。
 
+**权限差异处理**：config 为多账号（auth.accounts）时，权限相关的需求点要按账号拆用例——每个账号至少 1 条"该权限下可见/可操作"的正向用例，差异点补"无权限账号不可见/被拦截"的用例；每条用例在 frontmatter 用 `account:` 声明使用哪个账号（缺省用 auth.default）。
+
 ## 4. 生成用例
 
 覆盖矩阵：正常流 1 条 + 每个改动点 D 至少 1 条 + 边界/异常按澄清结果。每条用例写入 `.qa-powers/cases/<模块>/case-NN.md`：
@@ -59,6 +61,7 @@ title: 正常下单流程
 priority: P0
 requirement: ORD-1234
 covers: [D1, D2]          # meta.yaml 里的改动点 id
+account: admin            # 多账号时使用的账号名（config auth.accounts 的 key）；单账号/默认账号可省略
 data: { setup: setup.sql, cleanup: cleanup.sql }   # 无 DB 需求则删除
 ---
 

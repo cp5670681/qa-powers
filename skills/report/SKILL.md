@@ -40,6 +40,8 @@ allowed-tools: Read, Write, Bash(ls:*), AskUserQuestion
 |---|---|---|
 | case-01 正常下单流程 | ✅ PASS | |
 
+case result.yaml 带 `account:` 时，用例名后附账号（如 `case-02 下单 [buyer]`）；多账号 run 建议在总览后加一节「账号覆盖」：每个账号跑了哪些 case、通过率。
+
 ## 失败详情（每条 FAIL 一节）
 
 ### case-02 库存扣减验证 ❌
