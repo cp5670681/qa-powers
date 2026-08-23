@@ -12,6 +12,8 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*),
 
 - base_url（被测系统地址）
 - 登录方式（用户名密码表单 / 免登录）→ 用户名、密码的**环境变量名**（不收明文，提示用户写入 shell 配置）
+- 浏览器渠道：系统 Chrome / 系统 Edge / 内置 chromium（默认系统 Chrome，避免不必要的浏览器下载）
+- 运行模式：有头 / 无头（默认有头，便于用户观察执行过程）
 - 前端仓库绝对路径 + 基线分支（默认 main）
 - 后端仓库绝对路径 + 基线分支（默认 main）；无后端可跳过
 - DB：驱动类型 + 连接串环境变量名（如 `QAP_DB_URL`）；无 DB 可跳过
@@ -21,7 +23,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*),
 | 检查 | 命令 | 失败提示 |
 |---|---|---|
 | playwright-cli | `playwright-cli --version` | `npm install -g @playwright/cli@latest` |
-| 浏览器 | `playwright-cli install-browser chromium`（幂等） | 同上 |
+| 浏览器 | 选系统渠道（chrome/msedge）：`playwright-cli open about:blank --browser <渠道> --<模式>` 后 `close`；选 chromium：`playwright-cli install-browser chromium`（幂等） | 系统渠道：检查本机是否安装该浏览器；chromium：`npm install -g @playwright/cli@latest` |
 | usql | `usql --version` | `brew install usql` |
 | 前端仓库 | `git -C <path> rev-parse --is-inside-work-tree` | 检查路径 |
 | 后端仓库 | 同上（配置了才查） | 同上 |
@@ -39,6 +41,9 @@ mkdir -p .qa-powers/cases .qa-powers/evidence .qa-powers/reports
 ```yaml
 env: test
 base_url: <收集值>
+browser:
+  channel: chrome        # chrome | msedge | chromium
+  headed: true           # 有头模式
 auth:
   username_env: QAP_TEST_USER
   password_env: QAP_TEST_PASS
@@ -54,7 +59,7 @@ db:
 
 ## 5. 沉淀登录态（免登录跳过）
 
-1. `playwright-cli open <base_url>`
+1. `playwright-cli open <base_url> --browser <config的channel> --<headed时加 --headed>`
 2. `playwright-cli snapshot` 找到登录入口，引导完成登录（凭据从环境变量读，不要让用户在对话里发明文）
 3. 登录成功后：`playwright-cli state-save .qa-powers/auth-state.json`
 4. `playwright-cli close`

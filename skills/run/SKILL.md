@@ -1,7 +1,7 @@
 ---
 name: run
 description: 执行测试用例（guided-run）。逐条用例：usql 造数 → playwright-cli 按业务步骤驱动有头浏览器 → UI/DB 断言 → 清理 → 产出 result.yaml。用户说"跑用例"、"执行测试"时使用。
-allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(mkdir:*), Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(mkdir:*), Read, Grep, Glob, Write, Edit, AskUserQuestion
 ---
 
 # run：guided-run 执行用例
@@ -11,13 +11,15 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(mkdir:*), Read, Write,
 1. **业务意图固定，执行细节允许适配**：按 case 步骤执行；selector 可以修正（快照 ref 失效时按语义重新定位，如 getByRole 等价元素），但**禁止改变业务路径**（如绕过下单 UI 直接访问成功页）
 2. **绝不 checkout 被测仓库**
 3. 密码/连接串只从环境变量读
+4. **页面 URL 禁止猜测**：从 config `repos.frontend.path` 的路由代码推导（router 配置 / 页面组件的 route 定义），必要时前后端代码都可参考（如定位元素结构、确认接口行为），但只读，不修改
 
 ## 0. 准备
 
 1. 读 `.qa-powers/config.yaml`
 2. `run_id=$(date +%Y-%m-%d-%H%M)`；`mkdir -p .qa-powers/evidence/$run_id`
-4. 加载登录态并开浏览器：`playwright-cli open <base_url>` → `playwright-cli state-load .qa-powers/auth-state.json` → `playwright-cli goto <base_url>`，确认已登录（未登录 → 整个 run BLOCKED，走环境故障流程）
-5. `playwright-cli tracing-start`
+3. **建立路由映射**：用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义，得到「页面名 → URL」。用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
+4. 加载登录态并开浏览器（读 config 的 browser 段）：`playwright-cli open <base_url> --browser <channel> [--headed]` → `playwright-cli state-load .qa-powers/auth-state.json` → `playwright-cli goto <base_url>`，确认已登录（未登录 → 整个 run BLOCKED，走环境故障流程）
+5. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
 6. 用户指定跑哪些 case（默认 cases/ 下全部，按 priority 降序）
 
 ## 1. 逐条 case 执行
@@ -44,6 +46,10 @@ usql "$QAP_DB_URL" -f <setup.sql 路径>
 ### c. 断言（预期环节）
 
 - UI 断言：snapshot 中查找预期文本/元素，记录实际值
+- **瞬态元素断言（toast/一闪而过的提示）**：snapshot 往往来不及抓取，按以下优先级降级，并在 result.yaml 的 actual 中注明断言方式：
+  1. 操作后立即 snapshot / screenshot（1 次重试）
+  2. **行为断言**：预期"被拦截"时，验证「关键网络请求未发出」（requests 中无对应 POST）+「页面状态未变」（弹窗未关/数据未创建）
+  3. console 日志中查找前端报错/业务日志
 - DB 断言（预期含 DB: 时）：
 
 ```bash
@@ -64,6 +70,10 @@ cleanup 失败：在 case 级 result.yaml 的 cleanup 段记录，**不改变用
 
 ```yaml
 case: case-01
+title: 正常下单流程     # 取自 case frontmatter
+covers:                 # 取自 case frontmatter，供 report 展示覆盖改动点
+  - frontend:src/checkout/OrderForm.tsx
+  - backend:OrderController.create
 status: passed        # passed | failed | blocked | skipped
 reason: ""            # blocked/skipped 必填：环境故障或跳过原因
 steps_executed: 8
@@ -74,6 +84,7 @@ assertions:
     status: passed
 failure:              # 仅 failed 时
   step: 8
+  step_desc: 提交订单   # 失败步骤的语义摘要（取自 case 步骤，供 report 展示）
   evidence: screenshots/step-08.png
 cleanup:              # 仅失败时填
   status: failed

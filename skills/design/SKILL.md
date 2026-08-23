@@ -14,6 +14,8 @@ allowed-tools: Read, Write, Edit, Bash(git:*), AskUserQuestion, WebFetch
 - Confluence 链接：用 WebFetch/MCP 拉取
 - 用户提供了本地用例文档：读取并规整为标准格式
 
+**拉取失败降级**：MCP 报错（认证失效/连接失败）或 WebFetch 被拦时，直接请用户把需求内容粘贴到对话里，不要卡在重试上；同时提示用户可用 `claude mcp auth <server>` 重新授权。
+
 把需求拆成需求点 R1、R2、...（每条可独立验证）。
 
 ## 2. 代码影响分析（强制步骤，不可跳过）
@@ -75,6 +77,7 @@ data: { setup: setup.sql, cleanup: cleanup.sql }   # 无 DB 需求则删除
 用例规则：
 - 步骤是**业务语言**（"点击去结算"），不含执行细节（selector、会话名）
 - 预期必须可判定：有明确文本/状态/数据，不写"页面正常"
+- **预期可达性审查（强制）**：每条 UI 预期对照改动的组件代码确认 UI 上可触发。重点检查：控件是否有 `clearable`/`disabled`（能否清空/操作）、输入框 `maxlength`（长度校验是否被前端拦截）、默认值是否总有值（拦截分支是否可达）。UI 不可达的拦截分支不写成用例预期，可在 meta.yaml 或报告备注中标注为"防御性代码，UI 不可达"
 - 需要造数/清理时，同目录写 setup.sql / cleanup.sql（幂等；造数 SQL 用 `INSERT ... ` 并注明如何取回生成的 ID）
 
 ## 5. 用户确认

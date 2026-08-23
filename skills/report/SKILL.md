@@ -48,7 +48,7 @@ allowed-tools: Read, Write, Bash(ls:*), AskUserQuestion
 - **预期**: UI 出现"下单成功"
 - **实际**: 出现"系统异常"
 - **证据**: `evidence/<run-id>/case-02/screenshots/step-08.png`（tracing 见 run 会话）
-- **覆盖改动点**: D2（backend:OrderController.create）→ 初步判断方向：<结合预期/实际差异给一句话假设，如"提交接口报错，建议查后端日志与 OrderController.create" >
+- **覆盖改动点**: case result.yaml 的 covers（如 `backend:OrderController.create`）→ 初步判断方向：<结合预期/实际差异给一句话假设，如"提交接口报错，建议查后端日志与 OrderController.create" >
 
 ## BLOCKED 说明（有才写）
 
