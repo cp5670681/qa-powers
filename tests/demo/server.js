@@ -44,8 +44,9 @@ const server = http.createServer((req, res) => {
   }
   const file = url.pathname === "/" ? "index.html" : url.pathname.replace(/\.\./g, "");
   try {
+    const content = fs.readFileSync(path.join(__dirname, "public", file));
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(fs.readFileSync(path.join(__dirname, "public", file)));
+    res.end(content);
   } catch {
     res.writeHead(404);
     res.end("not found");
