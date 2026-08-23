@@ -1,0 +1,21 @@
+name: validate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Validate plugin structure
+        run: ./scripts/validate.sh
+      - name: Verify no tracked file is gitignored
+        run: |
+          if git ls-files -i -c --exclude-standard | grep -q .; then
+            echo "::error::有已跟踪文件命中 .gitignore"; git ls-files -i -c --exclude-standard; exit 1
+          fi
