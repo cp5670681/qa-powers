@@ -8,13 +8,15 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 ## 它解决什么问题
 
-传统 UI 自动化要么是脆的录制回放，要么是维护成本极高的代码脚本。qa-powers 把测试流程拆成四个 Claude Code skill，让 AI 读需求、读代码 diff、设计用例、驱动浏览器执行，同时用严格的 evidence 结构（截图 / 命令日志 / result.yaml）保证每条结论可追溯：
+传统 UI 自动化要么是脆的录制回放，要么是维护成本极高的代码脚本。qa-powers 把测试流程拆成四个 Claude Code skill，另附一个可选的远程环境运维 skill（k8s），让 AI 读需求、读代码 diff、设计用例、驱动浏览器执行，同时用严格的 evidence 结构（截图 / 命令日志 / result.yaml）保证每条结论可追溯：
 
 ```
 需求（文本 / Jira / Confluence）
   → /qa-powers:design   读 diff 做影响分析，生成用例（每个改动点至少 1 条覆盖）
   → /qa-powers:run      playwright-cli 驱动浏览器执行，usql 造数 / DB 断言
   → /qa-powers:report   汇总四态统计与失败详情
+
+（可选）日常运维：/qa-powers:k8s   经堡垒机查远程 k8s 环境日志、进 pod / rails console、在容器里跑脚本、换节点；拓扑入 config，个人身份走环境变量
 ```
 
 核心特性：
@@ -80,7 +82,7 @@ export QAP_DB_URL=<数据库连接串>
 ## 目录结构
 
 ```
-skills/          4 个工作流 skill + 1 个入口路由
+skills/          4 个测试工作流 skill + 1 个远程运维 skill + 1 个入口路由
 hooks/           SessionStart 提示 hook
 scripts/         validate.sh——插件结构自检
 tests/demo/      本地冒烟用被测项目（Node + sqlite3，无其他依赖）

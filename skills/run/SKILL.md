@@ -149,7 +149,7 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 
 ### c. 故障与收束
 
-- **2 个在跑用例因同类环境原因 blocked → 停止派发新 subagent**，未开始的全部标 blocked（reason 同），等在跑的收尾
+- **2 个在跑用例因同类环境原因 blocked → 停止派发新 subagent**，等在跑的收尾，随后按 §3 环境故障处理（含 k8s 排查与恢复判定）
 - 全部结束后进入收尾（§3），run 级 result.yaml 增加 `mode: parallel`、`workers: N`
 
 ## 3. 状态判定规则
@@ -161,7 +161,7 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 | blocked | 环境故障：登录失败、DB 连不上、服务 5xx/超时。**不算用例失败** |
 | skipped | 用户指定跳过 |
 
-**环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。
+**环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止派发。若 config 配置了 `k8s` 段，先加载 `qa-powers:k8s` 查后端日志 / pod 状态定位环境原因（结论记入 run 级 result.yaml；修复类操作按该 skill 规则需用户确认），排除后可恢复则继续 run；仍无法恢复 → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。
 
 ## 4. 收尾
 
@@ -173,6 +173,7 @@ run_id: 2026-08-23-1430
 module: ORD-1234-checkout
 mode: parallel        # sequential | parallel
 workers: 3            # 并发模式时有效
+env_diagnosis: ""     # 走过环境故障处理时必填：原因结论 + 排查动作（如 k8s 日志片段）
 cases:
   - case: case-01
     status: passed
