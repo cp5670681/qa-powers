@@ -19,7 +19,7 @@ description: qa-powers 入口路由。当用户提到 UI 测试、测某个需�
 |---|---|
 | "初始化测试环境"、"配置 qa-powers" | `qa-powers:init` |
 | "测一下 ORD-1234 这个需求"、"根据需求设计用例"、"生成用例" | `qa-powers:design` |
-| "跑用例"、"执行测试"、"回归一下" | `qa-powers:run` |
+| "跑用例"、"执行测试"、"回归一下"、"继续测试" | `qa-powers:run` |
 | "生成测试报告"、"看看结果" | `qa-powers:report` |
 
 ## 规则

@@ -44,11 +44,13 @@ case result.yaml 带 `account:` 时，用例名后附账号（如 `case-02 下�
 
 ## 失败详情（每条 FAIL 一节）
 
+预期/实际取该 case result.yaml 中 **status=failed 的断言**（一个 case 可能有多条断言，failed 的逐条列出，不要拿 passed 的断言充数）。case result.yaml 的 cleanup 段有记录（如「执行中误创建并已清理」）时，在该节末尾如实注明。
+
 ### case-02 库存扣减验证 ❌
 
 - **步骤**: step 8（提交订单）
-- **预期**: UI 出现"下单成功"
-- **实际**: 出现"系统异常"
+- **断言 1**: 预期 UI 出现"下单成功"｜实际 出现"系统异常"
+- **断言 2**: 预期 DB orders 新增 1 行｜实际 未新增（多条 failed 断言逐条列出）
 - **证据**: `evidence/<run-id>/case-02/screenshots/step-08.png`（tracing 见 run 会话）
 - **覆盖改动点**: case result.yaml 的 covers（如 `backend:OrderController.create`）→ 初步判断方向：<结合预期/实际差异给一句话假设，如"提交接口报错，建议查后端日志与 OrderController.create" >
 
