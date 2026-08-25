@@ -28,6 +28,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 - **DB 级断言**：不只看 UI，usql 直连数据库做表/字段级验证，也可用 runner 做应用内脚本验证（走 ORM/业务逻辑）；测试数据自动清理
 - **免环境变量**：凭据（账号密码、DB 连接串、JMS 身份）在 init 时直接明文存入 `.qa-powers/config.yaml`，无需维护 shell 环境变量；init 自动把 config 与登录态文件加入被测项目 `.gitignore`，防止误提交
 - **四态状态机**：passed / failed / blocked / skipped，环境故障不算用例失败
+- **首跑探索录制、二次起自动回放**：每条用例首次执行时把解析出的语义 locator 命令沉淀到 `cases/<模块>/<case-id>.replay.sh`；再次执行自动走回放模式直跑命令链，不再逐动作 snapshot 探索，断言/证据/造数不变。selector 失效自动单步降级探索并修脚本；删脚本即强制重新探索
 
 ## 安装
 

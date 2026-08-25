@@ -78,12 +78,18 @@ PRAGMA table_info('<表名>');
 
 ### b. 按步骤执行
 
-对 case 的每个步骤：
+先查本 case 是否有回放脚本 `cases/<模块>/<case-id>.replay.sh`：
+
+- **有 → 回放模式（首跑已沉淀，无需探索）**：直接逐条执行脚本里的命令（已是语义 locator，如 `playwright-cli click "getByRole('button', { name: '提交' })"`）。命令间**不主动 snapshot**，只在断言处、关键节点、命令报错时才 snapshot。命令失败（元素找不到/超时）→ 对该步回退探索模式重定位，并**更新 replay.sh 对应命令**。回放脚本只含 UI 操作链；造数/清理/断言照常走 §a/§0.5/§c。并行模式每行命令前加 `-s=qap-<case-id>`（同硬约束 5）；跨环境回放时 goto 行 host 替换为当前 ENV 的 base_url
+- **无 → 探索+录制模式**：走下方探索流程，同时把解析出的稳定命令沉淀到 `cases/<模块>/<case-id>.replay.sh`（下次自动回放）；删除该脚本即强制重新探索
+
+探索流程（对 case 的每个步骤）：
 1. `playwright-cli snapshot` 获取页面结构
 2. 按步骤语义操作（goto/click/fill/select/press...），找不到目标元素时重新 snapshot 按语义定位，**重试 1 次**。语义等价元素找到但文案与用例引用不一致（如按钮名变了）→ 可用该元素完成操作以验证后续行为，但必须补一条 ui 断言：expected=用例引用的文案、actual=页面实际文案、status=failed——文案漂移是 UI 回归，不属于可适配的 selector 差异
-3. 每条执行的命令追加写入 commands.log，格式：`# <case-id> step N: <步骤摘要>` 换行 `<实际命令>`
-4. 关键节点（提交前后、断言处）`playwright-cli screenshot --filename screenshots/step-NN.png`
-5. 出现意外状态（弹窗/报错）→ snapshot 判断：可关闭的关闭后继续；疑似 bug → 截图取证、在日志标注、按用例预期判定 FAIL，继续下一条步骤或下一 case
+3. **录制**：操作成功后用 `playwright-cli --raw generate-locator <ref>` 把元素 ref 转成语义 locator，对应命令写入 replay.sh（`playwright-cli click "getByRole(...)"`）；fill/select 的值、goto 的 URL 原样记入。**用语义 locator 不用 ref**——ref 每次 snapshot 会变，role locator 稳定
+4. 每条执行的命令追加写入 commands.log，格式：`# <case-id> step N: <步骤摘要>` 换行 `<实际命令>`
+5. 关键节点（提交前后、断言处）`playwright-cli screenshot --filename screenshots/step-NN.png`
+6. 出现意外状态（弹窗/报错）→ snapshot 判断：可关闭的关闭后继续；疑似 bug → 截图取证、在日志标注、按用例预期判定 FAIL，继续下一条步骤或下一 case
 
 ### c. 断言（预期环节）
 
