@@ -4,7 +4,7 @@
 
 - `skills/<name>/SKILL.md` —— 每个 skill 一份提示词，YAML frontmatter（name/description/allowed-tools）+ 流程正文
 - `hooks/hooks.json` —— Claude Code hooks 配置
-- `.claude-plugin/` —— 插件与 marketplace 清单（版本号改动需两处同步）
+- `.claude-plugin/` —— 插件与 marketplace 清单（版本号改动需两处同步；**不 bump 版本用户的 `/plugin update` 会被跳过**）
 - `tests/demo/` —— 冒烟夹具，改动 skill 后用它跑一遍四段流程
 
 ## 改动流程

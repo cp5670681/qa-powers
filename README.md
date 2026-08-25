@@ -46,7 +46,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 /plugin install qa-powers@qa-powers
 ```
 
-更新：插件是纯提示词技能，改完仓库内容后重新执行 install 刷新。
+更新：`/plugin marketplace update qa-powers` 刷新源后执行 `/plugin update qa-powers@qa-powers`（脚本/CLI：`claude plugin update qa-powers@qa-powers`），按提示 `/reload-plugins` 或重开会话生效；无需卸载重装。发版靠版本号识别，仓库有新改动但版本未变时 update 会被跳过。
 
 ## 快速开始
 
