@@ -18,7 +18,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 
 1. 读出现有配置，列给用户看（注意脱敏，只显示结构不显示值）
 2. **旧结构无法增量** → 说明需重跑 init 重新收集，先确认没有需要保留的手工改动再覆盖：① env/base_url/db/k8s 在顶层、无 `envs` 段；② 凭据字段是 `*_env` 环境变量名写法（现已改为明文直存）
-3. AskUserQuestion 确认本次要补哪些**缺失的段**（如 test 环境、k8s）；已有段一律不再收集、不改动
+3. AskUserQuestion 确认本次要补哪些**缺失的段**（如 test 环境、k8s；`repos.backend.type` 缺失时也按第 1 节探测补上）；已有段一律不再收集、不改动
 4. 只执行与缺失段相关的收集与校验；第 4 步写文件时**合并写入**——保留全部已有内容，仅追加/更新本次收集的段，禁止整份重写
 5. 目录骨架（第 3 步）`mkdir -p` 幂等，照常执行
 
@@ -30,26 +30,29 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 - 运行模式：有头 / 无头（默认有头，便于观察执行过程）
 - 前端仓库绝对路径 + 基线分支（默认 main）
 - 后端仓库绝对路径 + 基线分支（默认 main）；无后端可跳过
+- **后端项目类型（配了后端仓库才收）**：先探测后端仓库根目录——`Gemfile` → rails、`package.json` → node、`pyproject.toml`/`requirements.txt`/`manage.py` → python；都不是或不确定 → AskUserQuestion 从 rails/node/python/other 里选。类型写入 `repos.backend.type`，后续各 skill 按它分派提示（runner 建议、schema 定义位置、密码可读的配置文件）
 
 **环境选择（共享项收完后、问 base_url 之前；AskUserQuestion 多选）**：要配置哪些环境？local / test。选中几个就配几个——都选则一次 init 配齐双环境，之后换环境由 `run` 开头选择，无需重新 init。未选中的直接跳过（`envs` 只写选中的）。
+
+**密码收集方式（账号密码、DB 密码、JMS 身份通用）**：AskUserQuestion 的选项要求 ≥2 项且答案会留在对话里，**不要**为收密码凑选项（"Enter Password..."之类）；改用以下顺序——① 被测项目已有本地配置文件里能读到的直接读（按项目类型找：rails 看 `config/database.yml` 等、node/python 看 `.env`，读前告知用户取自哪里）；② 读不到就问用户要非敏感项（用户名等），密码请用户**直接在下一条消息里明文给**；同一批账号密码相同时问一句"是否同主账号密码"。
 
 **local 环境（base_url=本地地址，如 http://localhost:3000）**：
 
 - base_url
 - 登录方式（用户名密码表单 / 免登录）→ **主账号**（大部分用例都用它）：账号名（如 admin）+ 用户名、密码（明文收集，直接写入 config，作为 `auth.default`）
 - 权限类需求的多账号**不在 init 收集**：`qa-powers:design` 遇权限控制需求时查库发现账号、引导补密码，增量写入 config 的 `auth.accounts`
-- DB：驱动类型 + 连接串（明文，如 `postgres://user:pass@localhost/db`）；无 DB 可跳过
-- 脚本执行后端：本地 runner（任意命令，在本地后端仓库目录内执行；Rails 用 `bin/rails runner`、Node 用 `node`、Python 用 `python`）；无后端仓库则跳过
+- DB：驱动类型 + 连接串（明文，如 `postgres://user:pass@localhost/db`）；无 DB 可跳过。密码含特殊字符需 URL 编码（同 test 环境）
+- 脚本执行后端：本地 runner（任意命令，在本地后端仓库目录内执行；rails 用 `bin/rails runner`、node 用 `node`、python 用 `python`）；无后端仓库则跳过
 
 **test 环境（base_url=测试环境地址）**：
 
 - base_url
 - 登录方式 + 账号（同上）
-- DB：连接串（明文）；无 DB 可跳过
+- DB：连接串（明文）；无 DB 可跳过。**密码含特殊字符（`& ! # ? %` 等）必须 URL 编码**（如 `&`→`%26`），否则连接报 bad connection
 - 脚本执行后端固定 `k8s`：
-  - 堡垒机域名 + 端口；JMS 个人身份（明文，值形如 `用户名@系统用户`）
-  - 节点表（节点名 → 资产 IP）+ 默认节点
-  - 应用列表，每个应用收：namespace、容器名、pod 名匹配正则（主 pod 全名长度固定，按长度锚定以排除衍生 pod，如 `^research.{,17}$`）、应用目录、脚本执行器（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）
+  - JMS 通道：**优先让用户直接给完整四段身份串** `用户名@系统用户@资产IP@堡垒机域名`（如 `alice@root@172.16.4.23@jump.example.com`——用户通常能从既有命令或同事的脚本里拷到完整串），从串中解析出 user（前两段）、host（末段）、默认节点 IP（第三段）；**完整串不含端口，端口（如 22222）单独收**；用户只给零散信息时再分开收集域名+端口+JMS 个人身份
+  - 节点表（节点名 → 资产 IP）+ 默认节点：多节点时逐个收；单节点可只写一条。**用途**：k8s 操作时拼完整通道串 `user@节点IP@host`、换节点时按表取 IP——不是摆设，别写占位值
+  - 应用列表，每个应用收：namespace、容器名、pod 名匹配正则（主 pod 全名长度固定，按长度锚定以排除衍生 pod，如 `^research.{,17}$`）、应用目录（pod 工作目录已是应用目录时留空）、脚本执行器（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）
   - **script.app**：跑数据脚本（造数/清理/验证）归属的应用，取上面 apps 的某个键
 
 ## 2. 依赖校验（逐项执行，失败给出修复指引）
@@ -61,9 +64,9 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 | usql | `usql --version` | `brew install usql` |
 | 前端仓库 | `git -C <path> rev-parse --is-inside-work-tree` | 检查路径 |
 | 后端仓库 | 同上（配置了才查） | 同上 |
-| 每环境 DB 连接 | `usql "<对应 envs.<env>.db.url>" -c 'select 1'` | 检查连接串与网络 |
-| 本地 runner（local 配了 script.runner 才查） | `cd <repos.backend.path> && <envs.local.script.runner> <最小测试脚本>`（Rails 可 `-e 'puts 1'`） | runner 不存在/不能跑：核对 runner 路径与后端目录 |
-| k8s 通道（test 配了才查） | 校验 `envs.test.k8s.jms.user` 非空；连通性：按 `qa-powers:k8s` 的 pod 解析模板查一次任一应用的 pod 名 | 核对四段格式；**认证失败别连续重试——会锁号** |
+| 每环境 DB 连接 | `usql "<对应 envs.<env>.db.url>" -c 'select 1'` | 检查连接串与网络；报 bad connection/driver 错先查密码特殊字符是否漏 URL 编码（`&`→`%26` 等） |
+| 本地 runner（local 配了 script.runner 才查） | `cd <repos.backend.path> && <envs.local.script.runner> <最小测试脚本>`（按 type：rails `-e 'puts 1'`、node `-e 'console.log(1)'`、python `-c 'print(1)'`） | runner 不存在/不能跑：核对 runner 路径与后端目录 |
+| k8s 通道（test 配了才查） | 校验 `envs.test.k8s.jms.user` 非空；**用完整四段串实测一次**（不要只查字段非空）：<br>`ssh -p <port> '<user>@<default_node 的 IP>@<host>' 'kubectl get pods -n <某 app 的 namespace> \| head -3'`<br>能列出 pod 即通 | 核对四段格式（`用户名@系统用户@资产IP@堡垒机域名`，缺一段都连不上）；**认证失败别连续重试——会锁号**，逐段核对后最多再试一次 |
 
 ## 3. 生成目录骨架
 
@@ -71,7 +74,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 mkdir -p .qa-powers/cases .qa-powers/evidence .qa-powers/reports
 ```
 
-**gitignore 防泄漏（必做）**：确保被测项目 `.gitignore` 包含 `.qa-powers/config.yaml` 与 `.qa-powers/auth-*.json`（config 明文存凭据、登录态含会话 cookie，绝不能提交）；无 `.gitignore` 则创建，已含则跳过；被测项目不是 git 仓库时跳过本步并在收尾提示。**已被 git 跟踪的文件加 .gitignore 不生效**：`git ls-files --error-unmatch <文件>` 能查到时，提示用户确认后 `git rm --cached <文件>` 移出跟踪。cases/evidence/reports 不含凭据，可按团队需要提交。
+**gitignore 防泄漏（必做）**：目标是 `.qa-powers/config.yaml` 与 `.qa-powers/auth-*.json`（config 明文存凭据、登录态含会话 cookie，绝不能提交）被忽略——**先检查是否已有更宽规则**（如整目录 `.qa-powers`、`.qa-powers/*`）：`grep -n "qa-powers" .gitignore`，已有宽规则覆盖即跳过写入；没有则追加这两行（无 `.gitignore` 则创建）；被测项目不是 git 仓库时跳过本步并在收尾提示。**已被 git 跟踪的文件加 .gitignore 不生效**：`git ls-files --error-unmatch <文件>` 能查到时，提示用户确认后 `git rm --cached <文件>` 移出跟踪。cases/evidence/reports 不含凭据，可按团队需要提交。
 
 ## 4. 写 .qa-powers/config.yaml（用收集到的值；已有 config 时按第 0 节增量合并，只动本次收集的段）
 
@@ -81,7 +84,7 @@ browser:                 # 两环境共享
   headed: true           # 有头模式
 repos:                   # 共享：本地 checkout
   frontend: { path: <收集值>, base: <基线分支> }
-  backend:  { path: <收集值>, base: <基线分支> }   # 无则删除此行
+  backend:  { path: <收集值>, base: <基线分支>, type: rails }   # 无后端则删除此行；type=rails|node|python|other（第 1 节探测写入）
 active_env: local        # 所选环境中的第一个（只选 test 时为 test）；run 开头可切换
 envs:
   local:
@@ -107,19 +110,19 @@ envs:
       jms:
         host: <堡垒机域名>
         port: 22222
-        user: <用户名@系统用户>  # 明文，值形如 alice@root
-      default_node: <节点名>
-      nodes: { <节点名>: <资产IP>, ... }
+        user: <用户名@系统用户>  # 明文，值形如 alice@root；实际连接要拼完整四段：user@节点IP@host（见 k8s skill）
+      default_node: <节点名>    # 默认用的节点，对应 nodes 里的键
+      nodes: { <节点名>: <资产IP>, ... }   # 拼完整通道串/换节点时取 IP 用，禁止写占位值
       apps:
         <app>:
           namespace: <收集值>
           container: <收集值>
           pod_pattern: "<按主 pod 全名长度锚定的正则>"
-          workdir: <应用目录>
-          runner: <脚本执行器>        # 任意命令（Rails: bin/rails runner、Node: node、Python: python）；应用无脚本执行能力才删除此行
+          workdir: <应用目录>    # pod 工作目录已是应用目录时可留空；模板仅在非空时加 cd
+          runner: <脚本执行器>        # 任意命令（rails: bin/rails runner、node: node、python: python）；应用无脚本执行能力才删除此行
 ```
 
-注意：config **明文**存凭据（免去维护环境变量），必须已被 `.gitignore` 覆盖（见第 3 步）。登录态文件按 `auth-<env>-<account>.json` 分文件。
+注意：config **明文**存凭据（免去维护环境变量），必须已被 `.gitignore` 覆盖（见第 3 步）。登录态文件按 `auth-<env>-<account>.json` 分文件。老 config 缺 `repos.backend.type`：design/run 从已配的 runner 命令推断（含 rails→rails、node→node、python→python），推断不出按 other 处理，也可重跑 init 增量补上。
 
 ## 5. 沉淀登录态（免登录跳过；对 config 已配账号逐个做——init 后即主账号；design 后续追加的权限账号由 run 首次用到时自动登录沉淀，无需手工）
 

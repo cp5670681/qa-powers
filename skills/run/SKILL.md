@@ -36,10 +36,10 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 | 载体 | local 环境 | test 环境（k8s） |
 |---|---|---|
 | `.sql` 文件 | `usql "<envs.<ENV>.db.url>" -f <file>`（两环境通用） | 同左 |
-| 其他脚本文件（.rb/.py/.js/.sh…） | `cd <repos.backend.path> && <envs.local.script.runner> <file>`（本地 runner，任意命令） | k8s 跑脚本三式：落盘 pod /tmp → `cd <workdir> && <runner>` → 清理（app=`envs.<ENV>.script.app`，runner 取该 app 的 `runner`） |
-| 内联脚本 | `cd <repos.backend.path> && <runner> <内联参数> '<code>'` | ssh exec `kubectl exec ... -- <runner> <内联参数> '<code>'` |
+| 其他脚本文件（.rb/.py/.js/.sh…） | `cd <repos.backend.path> && <envs.local.script.runner> <file>`（本地 runner，任意命令） | **本地脚本 stdin 管道进 pod**（app=`envs.<ENV>.script.app`；ssh 三项取 `envs.<ENV>.k8s.jms` 与 `nodes` 表、app 四项取该 app，禁止猜）：`cat <file> \| ssh -p <envs.<ENV>.k8s.jms.port> '<envs.<ENV>.k8s.jms.user>@<nodes 表目标节点 IP>@<envs.<ENV>.k8s.jms.host>' 'kubectl exec -i -n <ns> $(kubectl get pods -n <ns> \| grep Running \| awk "{print \$1}" \| grep -E "<pod_pattern>") -c <container> -- <runner> -'` |
+| 内联脚本 | `cd <repos.backend.path> && <runner> <内联参数> '<code>'`（local 无 ssh 层，引号简单，可用） | **禁止内联**——ssh+kubectl 多层引号嵌套会吃掉插值/特殊字符（Ruby `#{}`、shell `$var`）；一律写本地脚本文件走上一行管道模式 |
 
-内联参数按 runner 语言取（Rails/Node 用 `-e`，Python 用 `-c`）；不确定就落盘成脚本文件再 `runner <file>`，最稳。
+内联参数按 runner 语言取（Rails/Node 用 `-e`，Python 用 `-c`）；管道模式 runner 用 `-` 从 stdin 读脚本（`bin/rails runner -` / `node -` / `python -` 均支持，不确定先跑 hello 探测）；test 环境一律落盘/管道，最稳。
 
 规则：
 

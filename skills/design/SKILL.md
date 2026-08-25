@@ -1,7 +1,7 @@
 ---
 name: design
 description: 根据需求设计 UI 测试用例。读取需求（文本/Jira/Confluence），强制做前后端仓库 diff 影响分析，交互式澄清后生成用例到 .qa-powers/cases/。用户说"设计用例"、"测一下 XX 需求"时使用。
-allowed-tools: Read, Write, Edit, Bash(git:*), Bash(usql:*), AskUserQuestion, WebFetch
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), AskUserQuestion, WebFetch
 ---
 
 # design：需求 → 用例
@@ -51,8 +51,21 @@ changes:
 **权限差异处理**：需求涉及权限控制（角色/数据可见范围/操作拦截）时，为不同权限各定一个测试账号，权限相关需求点按账号拆用例——每个权限账号至少 1 条"该权限下可见/可操作"的正向用例，差异点补"无权限账号不可见/被拦截"的用例；每条用例在 frontmatter 用 `account:` 声明（缺省用 `envs.<env>.auth.default` 主账号）。**账号按需发现，不依赖 init 预配**：
 
 1. config `envs.<env>.auth.accounts` 已有合适权限的账号 → 直接引用
-2. 没有 → **查库找**：config 配了多个环境先问按哪个查（单环境直接用）；先读后端代码确认用户/角色/权限表结构与关联，再 `usql "<envs.<env>.db.url>"` 按"能覆盖全部权限差异的最少账号数"查询（账号名用语义化 key，如 buyer/readonly，真实用户名记入查询结果）
+2. 没有 → **查库找**：config 配了多个环境先问按哪个查（单环境直接用）。**先读后端代码**确认权限的判断方式，再选查询载体：
+   - 权限是简单表结构（user 表有 role 列、有角色关联表）→ `usql "<envs.<env>.db.url>"` 直接查；**列名/表结构从后端仓库的 ORM/schema 定义读（按 `repos.backend.type`：rails 看 app/models 的 schema 注释、node 看 prisma/sequelize/迁移文件、python 看 models.py），禁止猜**（踩坑案例：外键是 `right_role_id` 而非想当然的 `role_id`，猜错一次白跑一趟慢查询）
+   - 权限是应用内逻辑、纯 SQL 查不出（如 Rails 谓词方法 `user.research_director?` 走 job_title/组织架构多层关联、Node 的权限中间件函数）→ 写 runner 脚本在应用内查（local 用本地 runner；test 经 k8s pod 执行，模式见下）
+   - 按"能覆盖全部权限差异的最少账号数"选号；账号名用语义化 key（如 buyer/readonly），真实用户名记入查询结果
 3. 库里查不到（无权限表/演示账号密码不明）→ 列出所需权限清单请用户提供
+
+**test 环境跑 runner 脚本（账号发现/读数验证通用）——唯一推荐模式，本地脚本经 stdin 管道进 pod**（跳板机上没有本地文件；多层引号内联代码会吃掉插值/特殊字符——Ruby `#{}`、shell `$var` 都中招，禁止）：
+
+```bash
+# 先把脚本写到本地文件，再：
+cat find_accounts.rb | ssh -p <envs.test.k8s.jms.port> '<envs.test.k8s.jms.user>@<nodes 表中目标节点的 IP>@<envs.test.k8s.jms.host>' \
+  'kubectl exec -i -n <app.namespace> $(kubectl get pods -n <app.namespace> | grep Running | awk "{print \$1}" | grep -E "<app.pod_pattern>") -c <app.container> -- <app.runner> -'
+```
+
+要点：`kubectl exec` 必须带 `-i`（stdin 直通）且 runner 用 `-` 从 stdin 读脚本（`bin/rails runner -` / `node -` / `python -` 均支持，不确定先跑 hello 探测）；config 值禁止猜——app 四项（namespace/container/pod_pattern/runner）取 `envs.test.k8s.apps`，ssh 三项取 `envs.test.k8s.jms` 与 `nodes` 表。**每次 ssh+kubectl+runner 启动约 30-60 秒（Rails 经验值）**：先跑小探测（确认方法/表存在，如打印模型的列名）再上全量查询，别拿整脚本试错。此管道模板与 `run` §0.5、`k8s` skill 跑脚本三式同源，改动需三处同步。
 
 发现的账号先只写进用例（`account:`），凭据在用户确认后按第 6 节补。
 
@@ -115,3 +128,5 @@ data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也
 | 编造测试数据 ID | 数据不存在，用例无法执行 | 用特征描述 + setup.sql 造数，ID 执行时取回 |
 | 预期写"正常展示" | 无法判定通过与否 | 写具体文案/值/数量 |
 | 遗漏负面场景 | 校验逻辑漏测 | 后端 UI 可达的错误分支逐条配用例 |
+| ssh 里内联脚本代码 | 多层引号吃掉插值/特殊字符（Ruby `#{}`、shell `$var`），脚本反复失败 | 一律本地写脚本文件 + stdin 管道进 pod（§3 模板） |
+| 猜数据库列名/外键名 | 查询报错，慢命令白跑 | 先读后端仓库 ORM/schema 定义；先小探测再全量 |

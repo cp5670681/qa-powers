@@ -44,7 +44,7 @@ ssh -p <port> "$JMS" 'kubectl get pods -n <app.namespace> | grep Running | awk "
 ## 3. 常用操作（POD = 上一步解析结果；下文简写 `<ns>`=`<app.namespace>`、`<container>`=`<app.container>`、`<port>`=`<envs.test.k8s.jms.port>`，`<workdir>`/`<runner>` 取该应用 config）
 
 ```bash
-# 文件日志（含 SQL，最后 N 行）
+# 文件日志（含 SQL，最后 N 行）；workdir 留空则用相对路径 log/production.log
 ssh -p <port> "$JMS" "kubectl exec -n <ns> $POD -c <container> -- tail -10 <workdir>/log/production.log"
 
 # 容器 stdout 日志
@@ -60,15 +60,17 @@ ssh -p <port> "$JMS" "bash -ic 'k8slist <app>'"
 # bash 脚本：stdin 直通
 cat fix.sh | ssh -p <port> "$JMS" "kubectl exec -i -n <ns> $POD -c <container> -- bash -s"
 
-# ruby 脚本：先落盘再 runner，跑完清理
+# ruby/python/js 脚本：stdin 直读（runner 支持读 stdin 时用 `-`：bin/rails runner - / node - / python - 均支持，首选；无需落盘）
+cat x.rb | ssh -p <port> "$JMS" "kubectl exec -i -n <ns> $POD -c <container> -- <runner> -"
+# runner 不支持 - 时退回复制到 pod 内执行，跑完清理（workdir 为空则省略 cd 段）：
 cat x.rb | ssh -p <port> "$JMS" "kubectl exec -i -n <ns> $POD -c <container> -- bash -c 'cat > /tmp/x.rb && cd <workdir> && <runner> /tmp/x.rb; rm -f /tmp/x.rb'"
 
-# 内联片段（无需本地文件）
+# 内联片段（无需本地文件；仅限简单语句——多层引号会吃掉插值/特殊字符，复杂逻辑一律写本地文件走上面管道）
 ssh -p <port> "$JMS" "kubectl exec -n <ns> $POD -c <container> -- <runner> -e 'puts 1'"
 ```
 
-- `<runner>`（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）与 `<workdir>`（如 `/var/www/research`）一律取 config，**禁止猜**（`/app`、`/srv` 都不对；PATH 里通常没有全局 runner）
-- runner 启动慢**不等于卡死**（Rails runner 约 1 分钟），不要提前杀掉重试
+- `<runner>`（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）与 `<workdir>`（如 `/var/www/research`）一律取 config，**禁止猜**（`/app`、`/srv` 都不对；PATH 里通常没有全局 runner）；`workdir` 为空说明 pod 工作目录已是应用目录，模板省略 `cd <workdir>` 段
+- runner 启动慢**不等于卡死**（Rails runner 约 1 分钟，其他类型一般更快），不要提前杀掉重试
 - 脚本含**写操作**（INSERT/UPDATE/DELETE、改文件）→ 执行前把要点给用户确认：动哪些表/数据、量级、是否可回滚；纯只读脚本（select/puts）直接跑
 
 ## 4. 交互式（给用户自己跑，命令前加 `! `）

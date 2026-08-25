@@ -24,6 +24,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 - **改动点 → 用例 → 证据追溯链**：design 阶段强制分析前后端 diff，产出改动点清单（D1、D2...），每条用例标注 covers，报告能直接回答"这个改动测没测到"
 - **业务语言用例**：用例步骤面向业务（"点击去结算"），执行细节由 AI 适配（selector 失效自动按语义重定位）
 - **双环境**：init 时多选环境、一次配齐本地(local)与测试(test)，之后换环境由 `run` 开头选择、无需重新 init——local 的脚本用本地 runner 跑（任意命令：Rails 用 `bin/rails runner`，也可 node/python），test 的脚本经堡垒机在 pod 里跑；usql 两环境通用
+- **通用项目类型**：init 探测后端项目类型（rails/node/python/other，写入 config `repos.backend.type`），runner 建议、schema 定义位置、密码配置文件等提示按类型分派；非 Rails 项目走同样的原理与流程，老 config 缺 type 时由 runner 命令自动推断
 - **DB 级断言**：不只看 UI，usql 直连数据库做表/字段级验证，也可用 runner 做应用内脚本验证（走 ORM/业务逻辑）；测试数据自动清理
 - **免环境变量**：凭据（账号密码、DB 连接串、JMS 身份）在 init 时直接明文存入 `.qa-powers/config.yaml`，无需维护 shell 环境变量；init 自动把 config 与登录态文件加入被测项目 `.gitignore`，防止误提交
 - **四态状态机**：passed / failed / blocked / skipped，环境故障不算用例失败
