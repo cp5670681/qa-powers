@@ -8,7 +8,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*),
 
 在**被测项目根目录**（不是 qa-powers 插件仓库）执行以下流程。
 
-config 可同时配**本地(local)**与**测试(test)**两套环境，`run` 开头选跑哪个。共享项（浏览器、代码仓库路径）只收一次；环境专属项（base_url、登录、DB、脚本执行后端）按环境分别收集。允许只配一个环境（跳过另一个）。
+config 可同时配**本地(local)**与**测试(test)**两套环境，初始化时**多选**要配的环境、一次配齐，之后换环境由 `run` 开头选择、无需重新 init。共享项（浏览器、代码仓库路径）只收一次；环境专属项（base_url、登录、DB、脚本执行后端）按环境分别收集。允许只配一个环境。
 
 ## 0. 已有 config 时走增量模式
 
@@ -29,6 +29,8 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，`run` 开�
 - 前端仓库绝对路径 + 基线分支（默认 main）
 - 后端仓库绝对路径 + 基线分支（默认 main）；无后端可跳过
 
+**环境选择（共享项收完后、问 base_url 之前；AskUserQuestion 多选）**：要配置哪些环境？local / test。选中几个就配几个——都选则一次 init 配齐双环境，之后换环境由 `run` 开头选择，无需重新 init。未选中的直接跳过（`envs` 只写选中的）。
+
 **local 环境（base_url=本地地址，如 http://localhost:3000）**：
 
 - base_url
@@ -47,8 +49,6 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，`run` 开�
   - 节点表（节点名 → 资产 IP）+ 默认节点
   - 应用列表，每个应用收：namespace、容器名、pod 名匹配正则（主 pod 全名长度固定，按长度锚定以排除衍生 pod，如 `^research.{,17}$`）、应用目录、脚本执行器（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）
   - **script.app**：跑数据脚本（造数/清理/验证）归属的应用，取上面 apps 的某个键
-
-**环境数量**：收集完一个环境后问是否也配另一个（跳过则 `envs` 只写一个环境）。
 
 ## 2. 依赖校验（逐项执行，失败给出修复指引）
 
@@ -79,7 +79,7 @@ browser:                 # 两环境共享
 repos:                   # 共享：本地 checkout
   frontend: { path: <收集值>, base: <基线分支> }
   backend:  { path: <收集值>, base: <基线分支> }   # 无则删除此行
-active_env: local        # 第一个配置的环境；run 开头可切换
+active_env: local        # 所选环境中的第一个（只选 test 时为 test）；run 开头可切换
 envs:
   local:
     base_url: <收集值>

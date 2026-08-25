@@ -23,7 +23,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 - **改动点 → 用例 → 证据追溯链**：design 阶段强制分析前后端 diff，产出改动点清单（D1、D2...），每条用例标注 covers，报告能直接回答"这个改动测没测到"
 - **业务语言用例**：用例步骤面向业务（"点击去结算"），执行细节由 AI 适配（selector 失效自动按语义重定位）
-- **双环境**：一份 config 同时配本地(local)与测试(test)两套环境，`run` 开头选跑哪个——local 的脚本用本地 runner 跑（任意命令：Rails 用 `bin/rails runner`，也可 node/python），test 的脚本经堡垒机在 pod 里跑；usql 两环境通用
+- **双环境**：init 时多选环境、一次配齐本地(local)与测试(test)，之后换环境由 `run` 开头选择、无需重新 init——local 的脚本用本地 runner 跑（任意命令：Rails 用 `bin/rails runner`，也可 node/python），test 的脚本经堡垒机在 pod 里跑；usql 两环境通用
 - **DB 级断言**：不只看 UI，usql 直连数据库做表/字段级验证，也可用 runner 做应用内脚本验证（走 ORM/业务逻辑）；测试数据自动清理
 - **凭据零落盘**：config 只存环境变量名，密码与连接串永远不进仓库
 - **四态状态机**：passed / failed / blocked / skipped，环境故障不算用例失败
@@ -58,7 +58,7 @@ node tests/demo/server.js    # 启动被测 demo：http://localhost:8899
 
 在 `tests/demo/` 目录下开一个新 Claude Code 会话，依次：
 
-1. `/qa-powers:init` —— 只配 **local** 环境（跳过 test），base_url 填 `http://localhost:8899`，免登录，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`，无后端仓库跳过脚本后端
+1. `/qa-powers:init` —— 环境多选只勾 **local**，base_url 填 `http://localhost:8899`，免登录，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`，无后端仓库跳过脚本后端
 2. `/qa-powers:design` —— 需求："用户可以把购物车里的测试商品A下单，数量可填；库存要正确扣减"
 3. `/qa-powers:run`
 4. `/qa-powers:report`
