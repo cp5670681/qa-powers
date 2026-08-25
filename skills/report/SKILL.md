@@ -42,6 +42,14 @@ allowed-tools: Read, Write, Bash(ls:*), AskUserQuestion
 
 case result.yaml 带 `account:` 时，用例名后附账号（如 `case-02 下单 [buyer]`）；多账号 run 建议在总览后加一节「账号覆盖」：每个账号跑了哪些 case、通过率。
 
+## 覆盖改动点与验证结论
+
+从 `cases/<模块>/meta.yaml` 的 `changes` 段拉取（id + desc，旧用例无 desc 时用 ref 兜底），按各 case 的 `covers` 关联：每个改动点列出覆盖它的 case 及其状态（✅ PASS / ❌ FAIL），给一句验证结论（结合该 case 断言的 actual 概括）。meta 无 `changes` 段（旧用例）时跳过本表。
+
+| 改动点 | 覆盖用例 | 验证结论 |
+|---|---|---|
+| D1 结算页订单表单组件 | case-01 ✅ / case-02 ✅ | 正常下单成功、库存扣减一致 |
+
 ## 失败详情（每条 FAIL 一节）
 
 预期/实际取该 case result.yaml 中 **status=failed 的断言**（一个 case 可能有多条断言，failed 的逐条列出，不要拿 passed 的断言充数）；db 断言带 `carrier:` 时在断言行标注载体（usql / runner）。case result.yaml 的 cleanup 段有记录（如「执行中误创建并已清理」）时，在该节末尾如实注明。

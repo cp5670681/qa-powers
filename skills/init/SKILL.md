@@ -41,14 +41,14 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 - base_url
 - 登录方式（用户名密码表单 / 免登录）→ **主账号**（大部分用例都用它）：账号名（如 admin）+ 用户名、密码（明文收集，直接写入 config，作为 `auth.default`）
 - 权限类需求的多账号**不在 init 收集**：`qa-powers:design` 遇权限控制需求时查库发现账号、引导补密码，增量写入 config 的 `auth.accounts`
-- DB：驱动类型 + 连接串（明文，如 `postgres://user:pass@localhost/db`）；无 DB 可跳过。密码含特殊字符需 URL 编码（同 test 环境）
+- DB：**多库探测收集**——先读后端仓库数据库配置（按 `repos.backend.type`：rails 看 `config/database.yml` 各环境段、node 看 `.env`/prisma 的 `DATABASE_URL*`、python 看 settings/.env），列出代码里出现的所有库，逐个归纳用途说明（哪个是主业务库=默认库、哪个是已发布/只读库、哪个是日志/分析库）。默认库写 `db.url`，其余库用语义别名写 `db.dbs`（`{ url, desc }`，desc 写明"哪些情况用这个库"）。代码里只有单库或读不到 → 只收 `db.url`；无 DB 可跳过。密码含特殊字符需 URL 编码（同 test 环境）
 - 脚本执行后端：本地 runner（任意命令，在本地后端仓库目录内执行；rails 用 `bin/rails runner`、node 用 `node`、python 用 `python`）；无后端仓库则跳过
 
 **test 环境（base_url=测试环境地址）**：
 
 - base_url
 - 登录方式 + 账号（同上）
-- DB：连接串（明文）；无 DB 可跳过。**密码含特殊字符（`& ! # ? %` 等）必须 URL 编码**（如 `&`→`%26`），否则连接报 bad connection
+- DB：连接串（明文），多库探测收集同 local——**代码配置只用来列出有哪些库、归纳各库用途说明，连接串一律以用户给的测试环境真实连接串为准**（代码里的 production 段可能是真实生产库，不能照抄）；无 DB 可跳过。**密码含特殊字符（`& ! # ? %` 等）必须 URL 编码**（如 `&`→`%26`），否则连接报 bad connection
 - 脚本执行后端固定 `k8s`：
   - JMS 通道：**优先让用户直接给完整四段身份串** `用户名@系统用户@资产IP@堡垒机域名`（如 `alice@root@172.16.4.23@jump.example.com`——用户通常能从既有命令或同事的脚本里拷到完整串），从串中解析出 user（前两段）、host（末段）、默认节点 IP（第三段）；**完整串不含端口，端口（如 22222）单独收**；用户只给零散信息时再分开收集域名+端口+JMS 个人身份
   - 节点表（节点名 → 资产 IP）+ 默认节点：多节点时逐个收；单节点可只写一条。**用途**：k8s 操作时拼完整通道串 `user@节点IP@host`、换节点时按表取 IP——不是摆设，别写占位值
@@ -64,7 +64,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 | usql | `usql --version` | `brew install usql` |
 | 前端仓库 | `git -C <path> rev-parse --is-inside-work-tree` | 检查路径 |
 | 后端仓库 | 同上（配置了才查） | 同上 |
-| 每环境 DB 连接 | `usql "<对应 envs.<env>.db.url>" -c 'select 1'` | 检查连接串与网络；报 bad connection/driver 错先查密码特殊字符是否漏 URL 编码（`&`→`%26` 等） |
+| 每环境 DB 连接 | `usql "<对应 envs.<env>.db.url>" -c 'select 1'`；配了 `db.dbs` 时每个别名库也 `usql "<dbs.<别名>.url>" -c 'select 1'` | 检查连接串与网络；报 bad connection/driver 错先查密码特殊字符是否漏 URL 编码（`&`→`%26` 等） |
 | 本地 runner（local 配了 script.runner 才查） | `cd <repos.backend.path> && <envs.local.script.runner> <最小测试脚本>`（按 type：rails `-e 'puts 1'`、node `-e 'console.log(1)'`、python `-c 'print(1)'`） | runner 不存在/不能跑：核对 runner 路径与后端目录 |
 | k8s 通道（test 配了才查） | 校验 `envs.test.k8s.jms.user` 非空；**用完整四段串实测一次**（不要只查字段非空）：<br>`ssh -p <port> '<user>@<default_node 的 IP>@<host>' 'kubectl get pods -n <某 app 的 namespace> \| head -3'`<br>能列出 pod 即通 | 核对四段格式（`用户名@系统用户@资产IP@堡垒机域名`，缺一段都连不上）；**认证失败别连续重试——会锁号**，逐段核对后最多再试一次 |
 
@@ -94,7 +94,10 @@ envs:
       accounts:          # 结构固定：key=账号名；免登录可删除整个 auth 段
         admin: { username: <明文>, password: <明文>, state_file: .qa-powers/auth-local-admin.json }
         # 权限测试账号由 design 发现后增量追加（key=账号名，如 buyer/readonly），init 不收集
-    db: { url: <连接串明文> }             # 无则删除整个 db 段
+    db:                                # 无 DB 则删除整个 db 段
+      url: <默认库连接串明文>            # 主库；usql 不带别名时默认用
+      dbs:                             # 跨库时追加，key=语义别名；desc 说明哪些情况用这个库
+        published: { url: <连接串明文>, desc: <用途说明，如"已发布内容库——查线上已发布数据"> }
     script:              # 无后端仓库则删除整个 script 段
       runner: bin/rails runner   # 本地脚本执行器，任意命令（Node: node、Python: python、Rails: bin/rails runner）
   test:
@@ -103,7 +106,10 @@ envs:
       default: admin
       accounts:
         admin: { username: <明文>, password: <明文>, state_file: .qa-powers/auth-test-admin.json }
-    db: { url: <连接串明文> }
+    db:
+      url: <默认库连接串明文>            # 主库；usql 不带别名时默认用
+      dbs:                             # 跨库时追加，同 local
+        published: { url: <连接串明文>, desc: <用途说明> }
     script:
       app: research      # 跑数据脚本归属的应用（取下方 apps 的键；脚本经堡垒机在该 app 的 pod 里执行）
     k8s:

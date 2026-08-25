@@ -17,13 +17,19 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 ## 0. 准备
 
+> 路径口径：本 skill 全文的 `cases/`、`evidence/` 均指被测项目根下的 `.qa-powers/cases/`、`.qa-powers/evidence/`；凡写「绝对路径」处一律为 `$PWD/.qa-powers/evidence/...`（用 `pwd` 取被测项目根拼接）。
+
 1. 读 `.qa-powers/config.yaml`
 2. **选环境（硬性步骤）**：读 `active_env`，AskUserQuestion 确认本次跑哪个 `envs` 键（local/test）或切到另一个；config 只配了一个环境时直接用它，不再问。确定 `ENV` 后，下文所有 base_url / 登录态 / DB URL / 脚本后端一律从 `envs.<ENV>` 取。记入 commands.log 与 run 级 result.yaml（`env: <ENV>`）
-3. `run_id=$(date +%Y-%m-%d-%H%M)`；`mkdir -p .qa-powers/evidence/$run_id`。**断点续跑**：若最新 run（evidence 目录名按 `YYYY-MM-DD-HHMM` 字典序取最大，即最新）下存在未完成 case（case 目录无 result.yaml），先问用户「继续该 run（复用其 run_id 与 evidence 目录，跳过已有终态 result.yaml 的 case，从第一个未完成的接着跑）还是新开 run」
-4. **建立路由映射**：用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义，得到「页面名 → URL」。用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
+3. `run_id=$(date +%Y-%m-%d-%H%M%S)`；`mkdir -p .qa-powers/evidence/$run_id`。**断点续跑**：若最新 run（evidence 目录名按 `YYYY-MM-DD-HHMMSS` 字典序取最大，即最新）下存在未完成 case（case 目录无 result.yaml），先问用户「继续该 run（复用其 run_id 与 evidence 目录，跳过已有终态 result.yaml 的 case，从第一个未完成的接着跑）还是新开 run」
+4. **建立路由映射**：
+   - 先查 `cases/<模块>/meta.yaml` 是否已沉淀 `routes:`（「页面名 → 完整 URL」映射，见下）→ 有则直接复用，不再推导
+   - 无则用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义推导。**先确认 router mode**（`src/router/index.js` 的 `mode:` 字段）：`hash` 模式下完整 URL 带 `#/` 前缀（如 `http://host/#/works/...`），history 模式不带——拼错 `#/` 会 404。相对 path（如 `total_package_progress_remark_statistics`）要结合父路由前缀（如 `/works`）拼成完整路径
+   - 推导成功后把「页面名 → 完整 URL」回写 `meta.yaml` 的 `routes:` 段，供本次 run 及下次复用（路由改动时更新）
+   - 用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
 5. **执行模式选择（AskUserQuestion）**：
    - 顺序 / 并发。并发时再问并发上限（默认 3，可选 2/3/4——每个 worker 是一个独立浏览器实例）
-   - **有头 / 无头（两种模式都问）**：推荐默认**无头**（证据靠截图/快照，无头更快更稳、多开不抢资源）；有头用于演示或排查单条 case 时选
+   - **有头 / 无头（两种模式都问）**：推荐默认**无头**（证据靠截图/快照，无头更快更稳、多开不抢资源）；有头用于演示或排查单条 case 时选。**有头 + 并发提示**：每个 worker 是有头浏览器窗口（3 worker = 3 窗口抢资源），有头并发建议把上限降到 2
    - 选择记入 commands.log 与 run 级 result.yaml（`mode: sequential|parallel`、`headed: true|false`、`workers: N`）
 6. 加载登录态并开浏览器（顺序模式）：`playwright-cli open <envs.<ENV>.base_url> --browser <channel> [--headed]` → `playwright-cli state-load <envs.<ENV>.auth.default 账号的 state_file>`（初始加载 default 主账号；无 auth 段=免登录，跳过登录态加载） → `playwright-cli goto <envs.<ENV>.base_url>`，确认已登录（未登录 → 先按 §1 多账号切换的**自动登录**流程重新登录沉淀；仍失败 → 整个 run BLOCKED，走环境故障流程）
 7. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
@@ -47,6 +53,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 规则：
 
 - 未配 script 段 / 无后端仓库 → 只允许 `.sql`（usql）；执行中遇到脚本文件停下，提示配置 runner 或改用 `.sql`
+- **多库**：`envs.<ENV>.db` 配了 `dbs: { 别名: { url, desc } }` 时，usql 目标库按 case frontmatter `dbs:` 声明的别名取 `dbs.<别名>.url`；用哪个库先看该别名的 `desc` 说明。用例 SQL 引用了别名而未声明 → 停下问用户或用 `db.url` 默认库
 - local 环境：runner 与 workdir（= repos.backend.path）取 config，**禁止猜**；runner 启动慢**不等于卡死**，不要提前杀掉重试
 - k8s（test）跑**写数据**脚本（INSERT/UPDATE/DELETE）前先 AskUserQuestion 确认（同 k8s skill 规则）；纯只读直接跑
 - local 首次执行 runner 命令会被权限拦截 → 授权放行（或把 `Bash(cd:*<runner>:*)` 写入 settings 白名单）
@@ -55,14 +62,17 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 对每条 case，在其证据目录 `evidence/$run_id/<case-id>/` 下工作（先 mkdir，并建 screenshots/）。断点续跑时，case 目录已有终态 result.yaml 的直接跳过，在 commands.log 注明 resumed-skip。
 
-**多账号切换**：case frontmatter 声明了 `account:` 且与当前已加载账号不同时，先切换：`playwright-cli state-load <envs.<ENV>.auth.accounts.<该账号>.state_file>` → `playwright-cli goto <envs.<ENV>.base_url>` → snapshot 确认登录身份已切换（页面上能看到当前用户标识时核对）。state_file 不存在或加载后未登录 → **自动登录**：snapshot 定位登录入口 → 用 config 该账号的 username/password fill 提交 → 登录成功后 `state-save <该账号 state_file>` 沉淀 → 回到目标页继续（fill 密码的命令记入 commands.log 时密码值脱敏为 `***`）。自动登录仍失败 → 该 case 标 blocked（reason 注明账号与原因）。切换/登录动作记入 commands.log。
+**多账号切换**：case frontmatter 声明了 `account:` 且与当前已加载账号不同时，先切换：`playwright-cli state-load <envs.<ENV>.auth.accounts.<该账号>.state_file>` → `playwright-cli goto <envs.<ENV>.base_url>` → snapshot 确认登录身份已切换（页面上能看到当前用户标识时核对）。state_file 不存在或加载后未登录 → **自动登录**（先 snapshot 识别登录页类型）：
+- **普通登录页**：定位登录入口 → 用 config 该账号的 username/password fill 提交
+- **SSO 登录页**（识别：URL 跳转到独立认证域名——URL 含 auth/oauth/sso 且非业务域名，页面是统一认证入口）：填 username/password 提交；页面出现额外多因子字段（令牌/验证码等）且非必填（有「忘记/暂不」类跳过入口）时留空跳过；登录成功按 redirect/return_to 参数自动回跳业务页。具体域名与页面文案以实际系统为准，勿套用固定文案
+- 登录成功后 `state-save <该账号 state_file>` 沉淀 → 回到目标页继续（fill 密码的命令记入 commands.log 时密码值脱敏为 `***`）。自动登录仍失败 → 该 case 标 blocked（reason 注明账号与原因）。切换/登录动作记入 commands.log。
 
 ### a. 造数（有 data.setup 时）
 
 按 §0.5 路由执行 setup 文件：
 
 ```bash
-usql "<envs.<ENV>.db.url>" -f <setup.sql 路径>      # .sql 载体
+usql "<envs.<ENV>.db.url>" -f <setup.sql 路径>      # .sql 载体；多库时目标库取 db.dbs.<别名>.url（别名见 case frontmatter dbs:）
 # 或
 cd <repos.backend.path> && <runner> <setup 脚本路径>   # 脚本文件（local）
 ```
@@ -88,7 +98,7 @@ PRAGMA table_info('<表名>');
 2. 按步骤语义操作（goto/click/fill/select/press...），找不到目标元素时重新 snapshot 按语义定位，**重试 1 次**。语义等价元素找到但文案与用例引用不一致（如按钮名变了）→ 可用该元素完成操作以验证后续行为，但必须补一条 ui 断言：expected=用例引用的文案、actual=页面实际文案、status=failed——文案漂移是 UI 回归，不属于可适配的 selector 差异
 3. **录制**：操作成功后用 `playwright-cli --raw generate-locator <ref>` 把元素 ref 转成语义 locator，对应命令写入 replay.sh（`playwright-cli click "getByRole(...)"`）；fill/select 的值、goto 的 URL 原样记入。**用语义 locator 不用 ref**——ref 每次 snapshot 会变，role locator 稳定
 4. 每条执行的命令追加写入 commands.log，格式：`# <case-id> step N: <步骤摘要>` 换行 `<实际命令>`
-5. 关键节点（提交前后、断言处）`playwright-cli screenshot --filename screenshots/step-NN.png`
+5. 关键节点（提交前后、断言处）`playwright-cli screenshot --filename <$PWD/.qa-powers/evidence/$run_id/<case-id>/screenshots/step-NN.png 的绝对路径>`——**一律用绝对路径**：会话 cwd 常在被测仓库根，相对路径会把截图写进仓库根污染工作区；不带 `--filename` 时 playwright-cli 用默认命名 `qap-<session>-stepNN.png` 也落在 cwd。收尾核对 screenshots/ 目录截图齐全、被测仓库根无残留 png（误落根目录的移到证据目录或删除）
 6. 出现意外状态（弹窗/报错）→ snapshot 判断：可关闭的关闭后继续；疑似 bug → 截图取证、在日志标注、按用例预期判定 FAIL，继续下一条步骤或下一 case
 
 ### c. 断言（预期环节）
@@ -98,9 +108,10 @@ PRAGMA table_info('<表名>');
 1. **UI**：snapshot 中查找预期文本/元素，记录实际值
 2. **网络**（凡涉及提交/接口交互的断言必查；纯静态展示可略）：`playwright-cli requests` + `response-body <n>` ——请求是否发出、参数、真实返回（注意 HTTP 2xx ≠ 成功，错误响应也可能 200/201，必看响应体的 message/数据）
 3. **DB**（预期含 DB: 时）：按 §0.5 路由，usql 原始 SQL 或应用内脚本验证二选一（脚本走 runner 更能反映业务逻辑/关联，usql 看落库原值）。落库字段与副作用：
+   - **多库选择**：跨库断言（如内部库 + 已发布库）时，config 的 `envs.<ENV>.db` 可配多库（`dbs: { 别名: { url, desc } }`），case frontmatter 用 `dbs:` 声明所需库；usql 按别名取 `dbs.<别名>.url`（用哪个库看 desc），无别名默认 `db.url`。subagent 派发时把 case 需要的 DSN 全部给出（见 §2b）
 
 ```bash
-usql "<envs.<ENV>.db.url>" -c "SELECT ... FROM orders WHERE ..."
+usql "<envs.<ENV>.db.url>" -c "SELECT ... FROM orders WHERE ..."   # 多库时目标库取 db.dbs.<别名>.url（别名见 case frontmatter dbs:）
 # 或（local，应用内脚本验证，runner 任意命令）
 cd <repos.backend.path> && <runner> -e 'puts Order.find_by(...).attributes'
 ```
@@ -164,6 +175,8 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 | 两次结果不一致 | 同一步骤重跑结果不同 | 大概率前端异步竞态：换输入方式（一次性完整输入替代逐键输入）复测，区分竞态与后端行为 |
 | 组件状态残留 | 上一条 case 的选中项/表单值还在 | 每条 case 开始先导航到目标页重置状态，确认初始状态符合前置再操作 |
 | hash 路由不重载 | URL 变了内容还是旧页 | goto 后快照确认，必要时 reload 再断言 |
+| hash 路由 URL 拼错 | goto `http://host/works/...` 404/白屏 | 先确认 router mode，hash 模式 URL 带 `#/` 前缀；用 meta.yaml `routes:` 沉淀的完整 URL（§0.4） |
+| 截图写错位置 | 截图落在仓库根（相对路径/默认命名落在 cwd） | 截图命令用绝对路径写 evidence 目录（§1b 第 5 点），收尾核对仓库根无残留 png |
 | ref 过期 | `Ref xxx not found` | 重新 snapshot 按语义定位（§1b 重试 1 次） |
 | 误创建数据 | 校验用例意外写入 | 见 §1c「意外成功」：查库 → 清理 → 注明 → 复测 |
 | local 环境服务没起 | 页面 5xx/连接拒绝 | 本地环境无 k8s，提示用户起服务/看本地日志；不是用例失败（blocked） |
@@ -181,20 +194,26 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 ### b. 派发循环
 
 - **账号预沉淀（派发前）**：汇总入选 case 声明的全部 `account`，state_file 缺失或未登录的，先在主会话按 §1 多账号切换的自动登录流程逐个沉淀——并发执行中禁止 state-save，必须提前备好
-- 维持在跑 subagent 数 ≤ 用户选的并发上限；每有空位，从「pending 且无 blockedBy」的用例中按 priority 派发
+- **生成共享上下文（派发前）**：写 `.qa-powers/evidence/<run-id>/context.md`，含 ENV（base_url、登录态文件路径、浏览器 channel/headless）、DB DSN 列表（按各 case frontmatter `dbs:` 声明从 `envs.<ENV>.db` 取，含多库别名及 desc）、路由映射、会话隔离约定（`-s=qap-<case-id>`）、执行协议（§1b/c/d）。subagent prompt 只需引用该文件 + case 全文/测试数据，不再逐条重复环境信息（减少写错与冗长）
+- **滚动派发（保持 N 并发，不等整批）**——参考 p-queue / worker pool 的并发队列语义，任务完成事件触发补位：
+   - **机制（关键）**：subagent 一律用 `run_in_background: true` 派发（Agent 工具后台运行），完成后自动收到 task-notification，主会话**不被阻塞**。这是滚动与「分批等整批」的分水岭——阻塞式 Agent 调用一次派 N 个后必须等全部返回，快的会空等慢的（实测 case-01 20 分钟期间，仅 6 分钟的第二批 case 完全没开始）。宿主 Agent 工具不支持 `run_in_background` 时退回阻塞式派发、按批等整批（机制降级，不改变正确性）
+  - **初始派发**：一次派发 `min(N, 待跑 case 数)` 个（同一响应内多个 Agent 调用 = 并行）
+  - **补位**：每收到一个完成通知 → 校验该 case 的 result.yaml → 立即从「pending 且无 blockedBy」中按 priority 取下一个补派，**维持在跑 ≤ N**；禁止等整批完成再派下一批
+  - **结束**：pending 空且无在跑 → 进入收尾（§4）。等待期间不轮询、不 sleep（完成通知自动到达）；确需等时用 bounded wait，间隔只发一行状态
+  - **故障**：连续 2 个在跑用例同类环境原因 blocked → 停止补派（§2c）
 - 每条 case spawn 一个 general-purpose subagent（一次消息里可同时派多个），prompt **必须自包含**：
   1. 用例全文 + 测试数据（具体 ID/账号等，subagent 没有主会话上下文）
-  2. **ENV**（`envs.<ENV>` 的 base_url、登录态文件路径、浏览器 channel/headless 选择）、脚本后端（local：`envs.local.script.runner`；test：`envs.<ENV>.script.app` 及其 k8s runner）
+  2. **ENV**（`envs.<ENV>` 的 base_url、登录态文件路径、浏览器 channel/headless 选择）、脚本后端（local：`envs.local.script.runner`；test：`envs.<ENV>.script.app` 及其 k8s runner）、DB DSN（引用 context.md 或按 case frontmatter `dbs:` 给出全部所需库）
   3. **会话隔离**：所有 playwright-cli 命令一律带 `-s=qap-<case-id>`，禁止操作其他会话
-  4. 执行协议：snapshot→按语义操作→重试 1 次；三层断言（快照/网络/查库）结论以下层为准；瞬态断言降级；校验用例意外成功先查库；截图与 commands.log 写入自己的 evidence 目录；结束幂等关闭自己的会话（close 报 not open 可忽略）
+  4. 执行协议：snapshot→按语义操作→重试 1 次；三层断言（快照/网络/查库）结论以下层为准；瞬态断言降级；校验用例意外成功先查库；截图用**绝对路径**写入自己的 `.qa-powers/evidence/<run-id>/<case-id>/screenshots/`（同 §1b 第 5 点，禁止相对路径）；**探索成功后把稳定命令沉淀到 `cases/<模块>/<case-id>.replay.sh`**（同 §1b 录制规则，下次自动回放）；结束幂等关闭自己的会话（close 报 not open 可忽略）
   5. 产出：按 case 级 result.yaml 模板写入 `evidence/<run-id>/<case-id>/result.yaml`，并在返回消息里报告一行结果摘要
   6. 禁止：state-save、checkout 被测仓库、改用例业务路径
-- subagent 返回后：校验 result.yaml 存在且结构合法（缺失/畸形 → blocked，reason 注明 subagent 未产出有效结果）；TaskUpdate 完成，释放后继依赖
+- subagent 返回后：校验 result.yaml 存在且结构合法（缺失/畸形 → blocked，reason 注明 subagent 未产出有效结果）；**核对证据目录截图齐全、被测仓库根无残留 png、replay.sh 已生成**（replay.sh 缺失 → 提醒补沉淀，不改变用例状态）；TaskUpdate 完成，释放后继依赖
 
 ### c. 故障与收束
 
 - **2 个在跑用例因同类环境原因 blocked → 停止派发新 subagent**，等在跑的收尾，随后按 §3 环境故障处理（含 k8s 排查与恢复判定）
-- 全部结束后进入收尾（§3），run 级 result.yaml 增加 `mode: parallel`、`workers: N`
+- 全部结束后进入收尾（§4），run 级 result.yaml 增加 `mode: parallel`、`workers: N`
 
 ## 3. 状态判定规则
 
@@ -210,10 +229,11 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 ## 4. 收尾
 
 1. `playwright-cli tracing-stop`、`playwright-cli close`
-2. 写 run 级 `evidence/$run_id/result.yaml`：
+2. **核对证据完整性**：每个 case 证据目录截图齐全；`git status` 检查被测仓库根无残留 png/临时文件（subagent 截图误落根目录的移到证据目录或删除）。缺截图/残留不改变用例状态，但收尾向用户一并说明
+3. 写 run 级 `evidence/$run_id/result.yaml`：
 
 ```yaml
-run_id: 2026-08-23-1430
+run_id: 2026-08-23-143015
 module: ORD-1234-checkout
 env: local              # local | test（§0.2 所选）
 mode: parallel          # sequential | parallel
@@ -231,6 +251,6 @@ summary:
   skipped: 0
 ```
 
-3. 向用户报告一句话结果（如 `共 2 条用例：1 通过，1 失败`），cleanup 残留告警，提示运行 `qa-powers:report` 生成报告
+4. 向用户报告一句话结果（如 `共 2 条用例：1 通过，1 失败`），cleanup 残留告警，提示运行 `qa-powers:report` 生成报告
 
 断点续跑收尾时：run 级 result.yaml 的 summary 汇总该 run **全部** case（含 resumed-skip 的，状态沿用其已有 result.yaml，不丢历史）

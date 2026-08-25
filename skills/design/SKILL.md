@@ -40,14 +40,19 @@ requirement_source: jira://ORD-1234
 requirements: [R1: 正常下单, R2: 库存扣减]
 base_branches: { frontend: <基线分支>, backend: <基线分支> }   # 取 config repos.*.base（init 探测的默认分支），禁止写死 main/master
 feature_branches: { frontend: <特性分支>, backend: <特性分支> }   # §2 问用户输入；用于追溯"这批 diff 是对哪个分支做的"
+routes: {}               # 页面名 → 完整 URL 映射；由 run 首次执行时推导回写（design 只留占位，不填）
 changes:
   - id: D1
     repo: frontend
     ref: src/checkout/OrderForm.tsx
+    desc: 结算页订单表单组件改动
   - id: D2
     repo: backend
     ref: OrderController.create
+    desc: 下单接口创建订单
 ```
+
+meta.yaml 写入用**增量更新**：只更新本次 design 产出的字段（requirements/base_branches/feature_branches/changes），**保留 run 已沉淀的 `routes:` 等其它字段**，禁止整份重写（否则会冲掉已推导的路由映射）。
 
 ## 3. 交互式澄清（AskUserQuestion，一次一个问题；question、header、选项 label 与 description 一律用中文，技术名词可保留英文）
 
@@ -57,7 +62,7 @@ changes:
 
 1. config `envs.<env>.auth.accounts` 已有合适权限的账号 → 直接引用
 2. 没有 → **查库找**：config 配了多个环境先问按哪个查（单环境直接用）。**先读后端代码**确认权限的判断方式，再选查询载体：
-   - 权限是简单表结构（user 表有 role 列、有角色关联表）→ `usql "<envs.<env>.db.url>"` 直接查；**列名/表结构从后端仓库的 ORM/schema 定义读（按 `repos.backend.type`：rails 看 app/models 的 schema 注释、node 看 prisma/sequelize/迁移文件、python 看 models.py），禁止猜**（踩坑案例：外键是 `right_role_id` 而非想当然的 `role_id`，猜错一次白跑一趟慢查询）
+   - 权限是简单表结构（user 表有 role 列、有角色关联表）→ `usql "<envs.<env>.db.url>"` 直接查（多库时按 config `db.dbs.<别名>.desc` 选对应库，用 `usql "<envs.<env>.db.dbs.<别名>.url>"`）；**列名/表结构从后端仓库的 ORM/schema 定义读（按 `repos.backend.type`：rails 看 app/models 的 schema 注释、node 看 prisma/sequelize/迁移文件、python 看 models.py），禁止猜**（踩坑案例：外键是 `right_role_id` 而非想当然的 `role_id`，猜错一次白跑一趟慢查询）
    - 权限是应用内逻辑、纯 SQL 查不出（如 Rails 谓词方法 `user.research_director?` 走 job_title/组织架构多层关联、Node 的权限中间件函数）→ 写 runner 脚本在应用内查（local 用本地 runner；test 经 k8s pod 执行，模式见下）
    - 按"能覆盖全部权限差异的最少账号数"选号；账号名用语义化 key（如 buyer/readonly），真实用户名记入查询结果
 3. 库里查不到（无权限表/演示账号密码不明）→ 列出所需权限清单请用户提供
@@ -86,6 +91,7 @@ priority: P0
 requirement: ORD-1234
 covers: [D1, D2]          # meta.yaml 里的改动点 id
 account: admin            # 多账号时使用的账号名（config envs.<env>.auth.accounts 的 key）；单账号/默认账号可省略
+dbs: [published]          # 跨库用例声明所需库别名（config envs.<ENV>.db.dbs 的 key，用途见其 desc）；单库可省略
 depends_on: []            # 依赖的前置用例 id；无依赖（可并发）时省略此行
 data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也可用脚本文件（.rb/.py 等，非 .sql 走 runner）
 ---
@@ -108,6 +114,7 @@ data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也
 - 预期必须可判定：有明确文本/状态/数据，不写"页面正常"。量化预期（排序/Top-N/计数）写清判定口径（按什么字段什么顺序、取前几条、满足什么条件计数），具体期望值由 run 阶段按实现逻辑查库得出再比对
 - **预期以需求为准，不迁就实现**：读 diff 发现实现与需求不一致时，预期仍写需求要求的值，并在该用例下备注「需求偏差：实现现状 + 代码位置」——执行时判 FAIL 正是要抓的问题；严禁为了让用例通过把预期改成实现现状
 - **依赖声明（供并发执行）**：用例间共享可变测试数据（同一条记录的造数/消耗/清理）、或存在业务先后关系时，用 frontmatter `depends_on: [case-XX]` 声明前置；**无依赖的用例不写此字段**（即视为可并发）。判定口径：操作同一行数据/同一库存/同一账号互斥状态 → 有依赖；只读、各自独立数据、不同账号 → 无依赖
+- **跨库声明（供多库断言）**：用例断言/造数涉及非默认库时，frontmatter 用 `dbs: [<别名>]` 声明所需库；别名与用哪个库的判断取 config `envs.<ENV>.db.dbs` 的 key 及其 `desc` 说明（如"已发布内容库——查线上已发布数据"）。单库用例不写此字段
 - **预期可达性审查（强制）**：每条 UI 预期对照改动的组件代码确认 UI 上可触发。重点检查：控件是否有 `clearable`/`disabled`（能否清空/操作）、输入框 `maxlength`（长度校验是否被前端拦截）、默认值是否总有值（拦截分支是否可达）。UI 不可达的拦截分支不写成用例预期，可在 meta.yaml 或报告备注中标注为"防御性代码，UI 不可达"
 - 需要造数/清理时，同目录写 setup/cleanup 脚本（幂等）。**载体按执行后端选**：`.sql` 走 usql（原始 SQL，插入/清理直接）；脚本文件（`.rb`/`.py`/`.js` 等，非 `.sql`）走 runner（应用内造数，需 ORM/回调/业务逻辑时用）。local 用本地 runner，test 走 k8s pod（执行细节由 run 阶段按 config 路由，design 只决定脚本内容）。造数用 `INSERT`（usql）或应用内建数（runner）并注明如何取回生成的 ID；造数记录的业务名称带模块标记（如 `ORD-1234测试商品（勿动）`），便于识别、复测保留与清理排查
 
