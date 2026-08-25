@@ -1,7 +1,7 @@
 ---
 name: design
 description: 根据需求设计 UI 测试用例。读取需求（文本/Jira/Confluence），强制做前后端仓库 diff 影响分析，交互式澄清后生成用例到 .qa-powers/cases/。用户说"设计用例"、"测一下 XX 需求"时使用。
-allowed-tools: Read, Write, Edit, Bash(git:*), AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Edit, Bash(git:*), Bash(usql:*), AskUserQuestion, WebFetch
 ---
 
 # design：需求 → 用例
@@ -48,7 +48,13 @@ changes:
 
 对以下内容不明确时逐条问：业务规则、验收标准、边界情况（空值/极值/并发）、权限差异。每个问题给选项。用户答"差不多就行"时按行业常规约定并在用例里标注假设。
 
-**权限差异处理**：config 当前环境为多账号（`envs.<env>.auth.accounts`）时，权限相关的需求点要按账号拆用例——每个账号至少 1 条"该权限下可见/可操作"的正向用例，差异点补"无权限账号不可见/被拦截"的用例；每条用例在 frontmatter 用 `account:` 声明使用哪个账号（缺省用 `envs.<env>.auth.default`）。
+**权限差异处理**：需求涉及权限控制（角色/数据可见范围/操作拦截）时，为不同权限各定一个测试账号，权限相关需求点按账号拆用例——每个权限账号至少 1 条"该权限下可见/可操作"的正向用例，差异点补"无权限账号不可见/被拦截"的用例；每条用例在 frontmatter 用 `account:` 声明（缺省用 `envs.<env>.auth.default` 主账号）。**账号按需发现，不依赖 init 预配**：
+
+1. config `envs.<env>.auth.accounts` 已有合适权限的账号 → 直接引用
+2. 没有 → **查库找**：config 配了多个环境先问按哪个查（单环境直接用）；先读后端代码确认用户/角色/权限表结构与关联，再 `usql "<envs.<env>.db.url>"` 按"能覆盖全部权限差异的最少账号数"查询（账号名用语义化 key，如 buyer/readonly，真实用户名记入查询结果）
+3. 库里查不到（无权限表/演示账号密码不明）→ 列出所需权限清单请用户提供
+
+发现的账号先只写进用例（`account:`），凭据在用户确认后按第 6 节补。
 
 ## 4. 生成用例
 
@@ -89,7 +95,16 @@ data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也
 
 ## 5. 用户确认
 
-列出用例清单（id/title/priority/covers），问用户是否需要增删改。确认后收尾提示：可运行 `qa-powers:run` 执行。
+列出用例清单（id/title/priority/covers/account），问用户是否需要增删改。
+
+## 6. 补账号凭据（用例声明了 config 没有的账号时）
+
+1. 汇总本次用例声明的全部 `account`，与所选环境 `envs.<env>.auth.accounts` 比对，列出缺失账号及其权限角色
+2. 引导用户逐个提供凭据（明文直接对话给即可）：查库发现的账号用户名已知、只收密码；用户提供的账号收用户名+密码
+3. **增量写入** config 对应环境的 `auth.accounts`：`账号名: { username, password, state_file: .qa-powers/auth-<env>-<账号名>.json }`——只追加新增键，不改已有内容。config 配了两个环境时问用户另一环境是否也要同名账号（用户名/密码可不同），需要则一并收集写入；不加则提醒：该环境跑这些用例会因账号缺失 blocked
+4. 登录态无需手工沉淀：`qa-powers:run` 首次用到该账号时自动登录并保存
+
+收尾提示：可运行 `qa-powers:run` 执行。
 
 ## Common Mistakes
 
