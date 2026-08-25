@@ -10,6 +10,8 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*),
 
 config 可同时配**本地(local)**与**测试(test)**两套环境，初始化时**多选**要配的环境、一次配齐，之后换环境由 `run` 开头选择、无需重新 init。共享项（浏览器、代码仓库路径）只收一次；环境专属项（base_url、登录、DB、脚本执行后端）按环境分别收集。允许只配一个环境。凭据（账号密码、DB 连接串、JMS 身份）**明文存入 config**，后续无需设置环境变量；init 会把敏感文件写入被测项目 `.gitignore` 防止误提交。
 
+**提问一律用中文**：所有 AskUserQuestion 的 question、header、选项 label 与 description 都用中文（base_url、DB、runner 等技术名词可保留英文）。
+
 ## 0. 已有 config 时走增量模式
 
 `.qa-powers/config.yaml` 已存在 → **不重新初始化**：

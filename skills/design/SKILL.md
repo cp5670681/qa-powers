@@ -44,7 +44,7 @@ changes:
     ref: OrderController.create
 ```
 
-## 3. 交互式澄清（AskUserQuestion，一次一个问题）
+## 3. 交互式澄清（AskUserQuestion，一次一个问题；question、header、选项 label 与 description 一律用中文，技术名词可保留英文）
 
 对以下内容不明确时逐条问：业务规则、验收标准、边界情况（空值/极值/并发）、权限差异。每个问题给选项。用户答"差不多就行"时按行业常规约定并在用例里标注假设。
 
@@ -106,7 +106,7 @@ data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也
 
 收尾提示：可运行 `qa-powers:run` 执行。
 
-## Common Mistakes
+## 常见错误
 
 | 错误 | 后果 | 对策 |
 | --- | --- | --- |

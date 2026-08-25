@@ -13,6 +13,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 3. 密码/连接串从 config 明文读；commands.log 与对话输出不得回显密码明文
 4. **页面 URL 禁止猜测**：从 config `repos.frontend.path` 的路由代码推导（router 配置 / 页面组件的 route 定义），必要时前后端代码都可参考（如定位元素结构、确认接口行为），但只读，不修改
 5. **并发模式附加约束**：并发执行中禁止 `state-save`（多会话共读登录态文件，写会互相踩）；DB 写操作（造数/清理）只允许操作用例自身的独立数据（自己的 setup 造出的、带模块标记的记录），跨用例共享数据（同一行/同一库存/同一账号互斥状态）靠 `depends_on` 串行化——与 design 的依赖判定口径一致：无 `depends_on` = 各自独立数据、可并发；每个 subagent 只能操作自己的 `-s=qap-<case-id>` 会话
+6. **提问一律用中文**：所有 AskUserQuestion 的 question、header、选项 label 与 description 都用中文（base_url、DB、k8s、runner 等技术名词可保留英文）；向用户汇报结果也用中文
 
 ## 0. 准备
 
@@ -221,6 +222,6 @@ summary:
   skipped: 0
 ```
 
-3. 向用户报告一句话结果（`2 cases: 1 passed, 1 failed`），cleanup 残留告警，提示运行 `qa-powers:report` 生成报告
+3. 向用户报告一句话结果（如 `共 2 条用例：1 通过，1 失败`），cleanup 残留告警，提示运行 `qa-powers:report` 生成报告
 
 断点续跑收尾时：run 级 result.yaml 的 summary 汇总该 run **全部** case（含 resumed-skip 的，状态沿用其已有 result.yaml，不丢历史）
