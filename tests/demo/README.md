@@ -4,7 +4,7 @@
 
 ## 冒烟清单（对 qa-powers 插件，在新 Claude Code 会话中对 demo 目录执行）
 
-1. `/qa-powers:init`——base_url=http://localhost:8899，跳过登录态，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`
+1. `/qa-powers:init`——只配 local 环境（跳过 test），base_url=http://localhost:8899，跳过登录态，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`，无后端仓库跳过脚本后端
 2. `/qa-powers:design`——需求："用户可以把购物车里的测试商品A下单，数量可填；库存要正确扣减"
 3. `/qa-powers:run`——应产出 evidence/<run-id>/result.yaml，正常下单 case PASS
 4. `/qa-powers:report`——应产出 reports/<run-id>.md，四态统计正确

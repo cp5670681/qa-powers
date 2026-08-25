@@ -48,7 +48,7 @@ changes:
 
 对以下内容不明确时逐条问：业务规则、验收标准、边界情况（空值/极值/并发）、权限差异。每个问题给选项。用户答"差不多就行"时按行业常规约定并在用例里标注假设。
 
-**权限差异处理**：config 为多账号（auth.accounts）时，权限相关的需求点要按账号拆用例——每个账号至少 1 条"该权限下可见/可操作"的正向用例，差异点补"无权限账号不可见/被拦截"的用例；每条用例在 frontmatter 用 `account:` 声明使用哪个账号（缺省用 auth.default）。
+**权限差异处理**：config 当前环境为多账号（`envs.<env>.auth.accounts`）时，权限相关的需求点要按账号拆用例——每个账号至少 1 条"该权限下可见/可操作"的正向用例，差异点补"无权限账号不可见/被拦截"的用例；每条用例在 frontmatter 用 `account:` 声明使用哪个账号（缺省用 `envs.<env>.auth.default`）。
 
 ## 4. 生成用例
 
@@ -61,9 +61,9 @@ title: 正常下单流程
 priority: P0
 requirement: ORD-1234
 covers: [D1, D2]          # meta.yaml 里的改动点 id
-account: admin            # 多账号时使用的账号名（config auth.accounts 的 key）；单账号/默认账号可省略
+account: admin            # 多账号时使用的账号名（config envs.<env>.auth.accounts 的 key）；单账号/默认账号可省略
 depends_on: []            # 依赖的前置用例 id；无依赖（可并发）时省略此行
-data: { setup: setup.sql, cleanup: cleanup.sql }   # 无 DB 需求则删除
+data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也可用脚本文件（.rb/.py 等，非 .sql 走 runner）
 ---
 
 ## 前置
@@ -85,7 +85,7 @@ data: { setup: setup.sql, cleanup: cleanup.sql }   # 无 DB 需求则删除
 - **预期以需求为准，不迁就实现**：读 diff 发现实现与需求不一致时，预期仍写需求要求的值，并在该用例下备注「需求偏差：实现现状 + 代码位置」——执行时判 FAIL 正是要抓的问题；严禁为了让用例通过把预期改成实现现状
 - **依赖声明（供并发执行）**：用例间共享可变测试数据（同一条记录的造数/消耗/清理）、或存在业务先后关系时，用 frontmatter `depends_on: [case-XX]` 声明前置；**无依赖的用例不写此字段**（即视为可并发）。判定口径：操作同一行数据/同一库存/同一账号互斥状态 → 有依赖；只读、各自独立数据、不同账号 → 无依赖
 - **预期可达性审查（强制）**：每条 UI 预期对照改动的组件代码确认 UI 上可触发。重点检查：控件是否有 `clearable`/`disabled`（能否清空/操作）、输入框 `maxlength`（长度校验是否被前端拦截）、默认值是否总有值（拦截分支是否可达）。UI 不可达的拦截分支不写成用例预期，可在 meta.yaml 或报告备注中标注为"防御性代码，UI 不可达"
-- 需要造数/清理时，同目录写 setup.sql / cleanup.sql（幂等；造数 SQL 用 `INSERT ... ` 并注明如何取回生成的 ID）；造数记录的业务名称带模块标记（如 `ORD-1234测试商品（勿动）`），便于识别、复测保留与清理排查
+- 需要造数/清理时，同目录写 setup/cleanup 脚本（幂等）。**载体按执行后端选**：`.sql` 走 usql（原始 SQL，插入/清理直接）；脚本文件（`.rb`/`.py`/`.js` 等，非 `.sql`）走 runner（应用内造数，需 ORM/回调/业务逻辑时用）。local 用本地 runner，test 走 k8s pod（执行细节由 run 阶段按 config 路由，design 只决定脚本内容）。造数用 `INSERT`（usql）或应用内建数（runner）并注明如何取回生成的 ID；造数记录的业务名称带模块标记（如 `ORD-1234测试商品（勿动）`），便于识别、复测保留与清理排查
 
 ## 5. 用户确认
 

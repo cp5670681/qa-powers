@@ -13,7 +13,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 ```
 需求（文本 / Jira / Confluence）
   → /qa-powers:design   读 diff 做影响分析，生成用例（每个改动点至少 1 条覆盖）
-  → /qa-powers:run      playwright-cli 驱动浏览器执行，usql 造数 / DB 断言
+  → /qa-powers:run      playwright-cli 驱动浏览器执行，脚本路由造数/验证/清理（.sql→usql、其他脚本→本地 runner 或 k8s pod）
   → /qa-powers:report   汇总四态统计与失败详情
 
 （可选）日常运维：/qa-powers:k8s   经堡垒机查远程 k8s 环境日志、进 pod / rails console、在容器里跑脚本、换节点；拓扑入 config，个人身份走环境变量
@@ -23,7 +23,8 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 - **改动点 → 用例 → 证据追溯链**：design 阶段强制分析前后端 diff，产出改动点清单（D1、D2...），每条用例标注 covers，报告能直接回答"这个改动测没测到"
 - **业务语言用例**：用例步骤面向业务（"点击去结算"），执行细节由 AI 适配（selector 失效自动按语义重定位）
-- **DB 级断言**：不只看 UI，usql 直连数据库做表/字段级验证，测试数据自动清理
+- **双环境**：一份 config 同时配本地(local)与测试(test)两套环境，`run` 开头选跑哪个——local 的脚本用本地 runner 跑（任意命令：Rails 用 `bin/rails runner`，也可 node/python），test 的脚本经堡垒机在 pod 里跑；usql 两环境通用
+- **DB 级断言**：不只看 UI，usql 直连数据库做表/字段级验证，也可用 runner 做应用内脚本验证（走 ORM/业务逻辑）；测试数据自动清理
 - **凭据零落盘**：config 只存环境变量名，密码与连接串永远不进仓库
 - **四态状态机**：passed / failed / blocked / skipped，环境故障不算用例失败
 
@@ -57,7 +58,7 @@ node tests/demo/server.js    # 启动被测 demo：http://localhost:8899
 
 在 `tests/demo/` 目录下开一个新 Claude Code 会话，依次：
 
-1. `/qa-powers:init` —— base_url 填 `http://localhost:8899`，免登录，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`
+1. `/qa-powers:init` —— 只配 **local** 环境（跳过 test），base_url 填 `http://localhost:8899`，免登录，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`，无后端仓库跳过脚本后端
 2. `/qa-powers:design` —— 需求："用户可以把购物车里的测试商品A下单，数量可填；库存要正确扣减"
 3. `/qa-powers:run`
 4. `/qa-powers:report`
@@ -71,12 +72,18 @@ node tests/demo/server.js    # 启动被测 demo：http://localhost:8899
 3. `/qa-powers:run` —— 执行并产出 `.qa-powers/evidence/<run-id>/`
 4. `/qa-powers:report` —— 生成 `.qa-powers/reports/<run-id>.md`
 
-开始前把凭据写入 shell 配置：
+开始前把凭据写入 shell 配置（按环境分变量名，`envs` 里填的就是这些变量名）：
 
 ```bash
-export QAP_TEST_USER=<测试账号>
-export QAP_TEST_PASS=<测试密码>
-export QAP_DB_URL=<数据库连接串>
+# local 环境
+export QAP_LOCAL_TEST_USER=<本地测试账号>
+export QAP_LOCAL_TEST_PASS=<本地测试密码>
+export QAP_LOCAL_DB_URL=<本地数据库连接串>
+# test 环境（配了才需要）
+export QAP_TEST_TEST_USER=<测试环境账号>
+export QAP_TEST_TEST_PASS=<测试环境密码>
+export QAP_TEST_DB_URL=<测试环境数据库连接串>
+export QAP_K8S_JMS_USER=用户名@系统用户   # 配了 k8s 才需要
 ```
 
 ## 目录结构

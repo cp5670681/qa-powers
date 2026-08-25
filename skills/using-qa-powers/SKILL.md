@@ -11,7 +11,7 @@ description: qa-powers 入口路由。当用户提到 UI 测试、测某个需�
 
 1. 检查被测项目根目录是否存在 `.qa-powers/config.yaml`
 2. 不存在且用户意图不是初始化 → 先引导用户走 `qa-powers:init`
-3. 存在 → 读取 config.yaml（只读一次，记住 base_url / repos / db / k8s 配置；k8s 段是可选的，路由到 `qa-powers:k8s` 时才需要）
+3. 存在 → 读取 config.yaml（只读一次，记住 `envs.<local|test>` 的 base_url / auth / db / script 与顶层 repos；k8s 段在 `envs.test.k8s`，路由到 `qa-powers:k8s` 时才需要）
 
 ## 路由表
 
@@ -19,7 +19,7 @@ description: qa-powers 入口路由。当用户提到 UI 测试、测某个需�
 |---|---|
 | "初始化测试环境"、"配置 qa-powers" | `qa-powers:init` |
 | "测一下 ORD-1234 这个需求"、"根据需求设计用例"、"生成用例" | `qa-powers:design` |
-| "跑用例"、"执行测试"、"回归一下"、"继续测试" | `qa-powers:run` |
+| "跑用例"、"执行测试"、"回归一下"、"继续测试"、"在本地/测试环境跑一下" | `qa-powers:run` |
 | "生成测试报告"、"看看结果" | `qa-powers:report` |
 | "看远程环境后端日志"、"查 pod 状态"、"进 pod / rails console"、"在 pod 里跑个脚本"、"换节点" | `qa-powers:k8s` |
 

@@ -44,7 +44,7 @@ case result.yaml 带 `account:` 时，用例名后附账号（如 `case-02 下�
 
 ## 失败详情（每条 FAIL 一节）
 
-预期/实际取该 case result.yaml 中 **status=failed 的断言**（一个 case 可能有多条断言，failed 的逐条列出，不要拿 passed 的断言充数）。case result.yaml 的 cleanup 段有记录（如「执行中误创建并已清理」）时，在该节末尾如实注明。
+预期/实际取该 case result.yaml 中 **status=failed 的断言**（一个 case 可能有多条断言，failed 的逐条列出，不要拿 passed 的断言充数）；db 断言带 `carrier:` 时在断言行标注载体（usql / runner）。case result.yaml 的 cleanup 段有记录（如「执行中误创建并已清理」）时，在该节末尾如实注明。
 
 ### case-02 库存扣减验证 ❌
 

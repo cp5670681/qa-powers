@@ -11,6 +11,8 @@
     "testing",
     "ui-automation",
     "playwright",
-    "usql"
+    "usql",
+    "rails",
+    "k8s"
   ]
 }
