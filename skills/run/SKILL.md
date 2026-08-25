@@ -10,7 +10,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 1. **业务意图固定，执行细节允许适配**：按 case 步骤执行；selector 可以修正（快照 ref 失效时按语义重新定位，如 getByRole 等价元素），但**禁止改变业务路径**（如绕过下单 UI 直接访问成功页）
 2. **绝不 checkout 被测仓库**
-3. 密码/连接串只从环境变量读
+3. 密码/连接串从 config 明文读；commands.log 与对话输出不得回显密码明文
 4. **页面 URL 禁止猜测**：从 config `repos.frontend.path` 的路由代码推导（router 配置 / 页面组件的 route 定义），必要时前后端代码都可参考（如定位元素结构、确认接口行为），但只读，不修改
 5. **并发模式附加约束**：并发执行中禁止 `state-save`（多会话共读登录态文件，写会互相踩）；DB 写操作（造数/清理）只允许操作用例自身的独立数据（自己的 setup 造出的、带模块标记的记录），跨用例共享数据（同一行/同一库存/同一账号互斥状态）靠 `depends_on` 串行化——与 design 的依赖判定口径一致：无 `depends_on` = 各自独立数据、可并发；每个 subagent 只能操作自己的 `-s=qap-<case-id>` 会话
 
@@ -34,7 +34,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 | 载体 | local 环境 | test 环境（k8s） |
 |---|---|---|
-| `.sql` 文件 | `usql "$<envs.<ENV>.db.url_env>" -f <file>`（两环境通用） | 同左 |
+| `.sql` 文件 | `usql "<envs.<ENV>.db.url>" -f <file>`（两环境通用） | 同左 |
 | 其他脚本文件（.rb/.py/.js/.sh…） | `cd <repos.backend.path> && <envs.local.script.runner> <file>`（本地 runner，任意命令） | k8s 跑脚本三式：落盘 pod /tmp → `cd <workdir> && <runner>` → 清理（app=`envs.<ENV>.script.app`，runner 取该 app 的 `runner`） |
 | 内联脚本 | `cd <repos.backend.path> && <runner> <内联参数> '<code>'` | ssh exec `kubectl exec ... -- <runner> <内联参数> '<code>'` |
 
@@ -58,7 +58,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 按 §0.5 路由执行 setup 文件：
 
 ```bash
-usql "$<envs.<ENV>.db.url_env>" -f <setup.sql 路径>      # .sql 载体
+usql "<envs.<ENV>.db.url>" -f <setup.sql 路径>      # .sql 载体
 # 或
 cd <repos.backend.path> && <runner> <setup 脚本路径>   # 脚本文件（local）
 ```
@@ -90,7 +90,7 @@ PRAGMA table_info('<表名>');
 3. **DB**（预期含 DB: 时）：按 §0.5 路由，usql 原始 SQL 或应用内脚本验证二选一（脚本走 runner 更能反映业务逻辑/关联，usql 看落库原值）。落库字段与副作用：
 
 ```bash
-usql "$<envs.<ENV>.db.url_env>" -c "SELECT ... FROM orders WHERE ..."
+usql "<envs.<ENV>.db.url>" -c "SELECT ... FROM orders WHERE ..."
 # 或（local，应用内脚本验证，runner 任意命令）
 cd <repos.backend.path> && <runner> -e 'puts Order.find_by(...).attributes'
 ```

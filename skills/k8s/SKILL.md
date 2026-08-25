@@ -9,13 +9,13 @@ allowed-tools: Bash(ssh:*), Bash(cat:*), Read, AskUserQuestion
 ## 0. 准备
 
 1. 读 `.qa-powers/config.yaml` 的 `envs.test.k8s` 段（双环境结构：k8s 只在 test 环境）；不存在 → 引导用户运行 `qa-powers:init`
-2. 拼装 JMS 通道串（个人身份从环境变量读，不落盘）：
+2. 拼装 JMS 通道串（个人身份从 config `envs.test.k8s.jms.user` 明文读）：
 
 ```bash
-JMS="${QAP_K8S_JMS_USER}@<envs.test.k8s.nodes 里目标节点的IP>@<envs.test.k8s.jms.host>"
+JMS="<envs.test.k8s.jms.user>@<envs.test.k8s.nodes 里目标节点的IP>@<envs.test.k8s.jms.host>"
 ```
 
-3. `QAP_K8S_JMS_USER` 未设置 → 停下，提示用户 export 后重试，值形如 `alice@root`
+3. config `envs.test.k8s.jms.user` 为空 → 停下，提示重跑 `qa-powers:init` 补上，值形如 `alice@root`
 4. 涉及删除/修改类操作（k8sdel、k8sedit、删 pod、改线上资源）**以及会写数据的脚本**（数据修复/迁移/删除），必须先 AskUserQuestion 确认
 
 > 本 skill 是 test 环境的运维入口；跑**数据脚本**（造数/清理/验证）的默认应用是 `envs.test.script.app`（`envs.test.k8s.apps` 的某个键），下文 `<app>` 未指明时用它。
@@ -100,7 +100,7 @@ ssh -t -p <port> "$JMS" "bash -ic 'k8s <app>'"                             # 节
 
 ## 7. 兜底：直连不灵时走交互菜单（给用户自己跑，`! ` 前缀）
 
-`! ssh -p <port> "${QAP_K8S_JMS_USER}@<envs.test.k8s.jms.host>"` → 回车出资产列表 → 输资产名回车登录（四段格式去掉资产段即菜单模式）。
+`! ssh -p <port> "<envs.test.k8s.jms.user>@<envs.test.k8s.jms.host>"` → 回车出资产列表 → 输资产名回车登录（四段格式去掉资产段即菜单模式）。
 
 ## 常见错误对照
 
