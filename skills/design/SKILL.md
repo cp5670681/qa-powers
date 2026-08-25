@@ -20,13 +20,17 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ss
 
 ## 2. 代码影响分析（强制步骤，不可跳过）
 
-读 `.qa-powers/config.yaml` 的 repos 段，对每个仓库：
+读 `.qa-powers/config.yaml` 的 repos 段。**先问特性分支，不依赖 checkout**：AskUserQuestion 逐个仓库问「本次需求测哪个分支的改动？」，选项给「当前 checkout 分支（`<branch --show-current>` 的值）」并说明可直接输入分支名（如 `feature/ord-1234`）；前后端分支通常同名，先问前端再问后端是否同分支。
+
+对每个仓库，用用户指定的分支引用做只读 diff（**绝不 checkout**）：
 
 ```bash
-git -C <path> branch --show-current          # 只读，绝不 checkout
-git -C <path> diff <base>...HEAD --stat     # 改动概览
-git -C <path> diff <base>...HEAD            # 详细 diff（大仓库按目录分批看）
+git -C <path> branch --show-current            # 只读，绝不 checkout；仅记录当前环境，不参与 diff
+git -C <path> diff <base>...<branch> --stat    # 改动概览（branch=用户输入）
+git -C <path> diff <base>...<branch>           # 详细 diff（大仓库按目录分批看）
 ```
+
+分支引用解析：本地有该分支直接用；本地没有 → `git fetch` 后用 `origin/<branch>`；远端也没有 → 提示先推送或换分支，别硬跑。**diff 为空**（branch 与 base 相同、或分支上无新提交）→ 明确告诉用户当前分析不出改动，核对分支名与是否已提交（`git diff <base>...<branch>` 只看已提交改动）。
 
 产出**改动点清单** D1、D2、...：涉及的页面/组件、接口、SQL/数据变更、配置。写入 `.qa-powers/cases/<模块>/meta.yaml`：
 
@@ -35,6 +39,7 @@ module: <模块名，如 ORD-1234-checkout>
 requirement_source: jira://ORD-1234
 requirements: [R1: 正常下单, R2: 库存扣减]
 base_branches: { frontend: <基线分支>, backend: <基线分支> }   # 取 config repos.*.base（init 探测的默认分支），禁止写死 main/master
+feature_branches: { frontend: <特性分支>, backend: <特性分支> }   # §2 问用户输入；用于追溯"这批 diff 是对哪个分支做的"
 changes:
   - id: D1
     repo: frontend

@@ -28,6 +28,9 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 6. 加载登录态并开浏览器（顺序模式）：`playwright-cli open <envs.<ENV>.base_url> --browser <channel> [--headed]` → `playwright-cli state-load <envs.<ENV>.auth.default 账号的 state_file>`（初始加载 default 主账号；无 auth 段=免登录，跳过登录态加载） → `playwright-cli goto <envs.<ENV>.base_url>`，确认已登录（未登录 → 先按 §1 多账号切换的**自动登录**流程重新登录沉淀；仍失败 → 整个 run BLOCKED，走环境故障流程）
 7. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
 8. 用户指定跑哪些 case（默认 cases/ 下全部，按 priority 降序）
+9. **分支核对（仅 local；test 跑 pod 内代码，跳过）**：本地脚本/浏览器对着工作区执行，前后端仓库都须在特性分支上。对本次要执行的每个模块，读 `cases/<模块>/meta.yaml` 的 `feature_branches`，逐仓库核对 `git -C <path> branch --show-current`：
+   - 当前分支 ≠ 特性分支 → 停下提示，请**用户自己切**（`! git -C <path> switch <特性分支>`；本地没有先 `git fetch` 再 `git switch --track origin/<特性分支>`），**AI 绝不 checkout**。用户坚持用当前分支 → 放行并在 commands.log 注明「分支不符：current vs feature」。提醒用户切分支前本地改动需已提交或 stash
+   - meta 无 `feature_branches`（旧用例）→ AskUserQuestion 问本次特性分支，或用户确认跳过核对
 
 ## 0.5 脚本执行路由（造数/清理/DB 断言共用）
 
