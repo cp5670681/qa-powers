@@ -34,7 +34,7 @@ git -C <path> diff <base>...HEAD            # 详细 diff（大仓库按目录�
 module: <模块名，如 ORD-1234-checkout>
 requirement_source: jira://ORD-1234
 requirements: [R1: 正常下单, R2: 库存扣减]
-base_branches: { frontend: main, backend: main }
+base_branches: { frontend: <基线分支>, backend: <基线分支> }   # 取 config repos.*.base（init 探测的默认分支），禁止写死 main/master
 changes:
   - id: D1
     repo: frontend

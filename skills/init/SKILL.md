@@ -28,8 +28,8 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 
 - 浏览器渠道：**先探测系统已装浏览器**（Linux/WSL：`which google-chrome google-chrome-stable msedge`；macOS：`ls /Applications | grep -E "Google Chrome|Microsoft Edge"`），探测到就直接用系统渠道（chrome/msedge，**不下载任何浏览器**）；都没有才选内置 chromium（需下载）
 - 运行模式：有头 / 无头（默认有头，便于观察执行过程）
-- 前端仓库绝对路径 + 基线分支（默认 main）
-- 后端仓库绝对路径 + 基线分支（默认 main）；无后端可跳过
+- 前端仓库绝对路径 + 基线分支（**探测默认分支**，main/master 自动识别：`git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` 输出 `origin/main` 则取 `main`；探测不出（无 remote HEAD 引用）或用户想用非默认基线（如 develop）→ AskUserQuestion 问）
+- 后端仓库绝对路径 + 基线分支（同上探测）；无后端可跳过
 - **后端项目类型（配了后端仓库才收）**：先探测后端仓库根目录——`Gemfile` → rails、`package.json` → node、`pyproject.toml`/`requirements.txt`/`manage.py` → python；都不是或不确定 → AskUserQuestion 从 rails/node/python/other 里选。类型写入 `repos.backend.type`，后续各 skill 按它分派提示（runner 建议、schema 定义位置、密码可读的配置文件）
 
 **环境选择（共享项收完后、问 base_url 之前；AskUserQuestion 多选）**：要配置哪些环境？local / test。选中几个就配几个——都选则一次 init 配齐双环境，之后换环境由 `run` 开头选择，无需重新 init。未选中的直接跳过（`envs` 只写选中的）。
@@ -83,8 +83,8 @@ browser:                 # 两环境共享
   channel: chrome        # chrome | msedge | chromium
   headed: true           # 有头模式
 repos:                   # 共享：本地 checkout
-  frontend: { path: <收集值>, base: <基线分支> }
-  backend:  { path: <收集值>, base: <基线分支>, type: rails }   # 无后端则删除此行；type=rails|node|python|other（第 1 节探测写入）
+  frontend: { path: <收集值>, base: <探测的默认分支> }   # base 用第 1 节探测出的默认分支（main/master）
+  backend:  { path: <收集值>, base: <探测的默认分支>, type: rails }   # 无后端则删除此行；type=rails|node|python|other（第 1 节探测写入）
 active_env: local        # 所选环境中的第一个（只选 test 时为 test）；run 开头可切换
 envs:
   local:
