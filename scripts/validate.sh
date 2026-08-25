@@ -4,8 +4,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail=0
 
+json_check() {
+  if command -v jq >/dev/null 2>&1; then
+    jq empty "$1" 2>/dev/null
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -m json.tool "$1" >/dev/null 2>&1
+  else
+    echo "MISSING DEPENDENCY: jq 或 python3 需要其一（校验 JSON 用）"; exit 1
+  fi
+}
+
 for f in .claude-plugin/plugin.json hooks/hooks.json; do
-  if ! jq empty "$f" 2>/dev/null; then
+  if ! json_check "$f"; then
     echo "INVALID JSON: $f"; fail=1
   fi
 done

@@ -9,7 +9,7 @@
 
 ## 改动流程
 
-1. 改 skill 前先跑 `./scripts/validate.sh`，改完再跑一次（frontmatter 合法性）
+1. 改 skill 前先跑 `./scripts/validate.sh`，改完再跑一次（JSON 与 frontmatter 合法性；需 jq 或 python3 任一）
 2. 用 demo 冒烟：`node tests/demo/server.js`，按 `tests/demo/README.md` 清单走 init → design → run → report
 3. 真实项目回归一次（建议保留一个内部实战记录作对照，**该记录不入库**）
 4. 提交信息用约定式前缀：`feat:` / `fix:` / `docs:` / `test:`
