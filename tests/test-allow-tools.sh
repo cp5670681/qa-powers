@@ -102,9 +102,31 @@ check skip 'usql "sqlite:///x" -c "SELECT $(id)"'              # 同上，usql �
 check skip 'playwright-cli foo "`id`"'                         # 双引号内反引号命令替换
 check skip 'playwright-cli a\" & rm -rf /'                     # 引号外 \" 转义不开启引号 + 后台 &
 check skip 'playwright-cli a\" > /etc/passwd'                  # 引号外 \" 转义不开启引号 + 重定向
+check skip 'playwright-cli a\" ; rm -rf /tmp/x'                # 引号外 \" 后的分号必须照常拆段（不能藏进"引号内"）
+check skip "playwright-cli a\\' ; rm -rf /tmp/x"               # 引号外 \' 同上
+check skip 'playwright-cli a\" | rm -rf /tmp/x'                # 引号外 \" 后的管道同上
+check skip 'playwright-cli a\" || rm -rf /tmp/x'               # 引号外 \" 后的 || 同上
+check skip 'usql "sqlite:///x" -c "SELECT 1" \" | rm -rf /tmp/x'   # usql 只读放行同样不许夹带隐藏段
+
+# ---- 不放行：CR-2026-08 绕过向量（引号状态机/取参与 bash 语义脱节，均已实证复现过）----
+check skip "usql \"sqlite:///x\" -c 'SELECT 1\\' && rm -rf /tmp"    # 单引号内反斜杠+引号在 bash 已闭合引号，&& 后是独立命令
+check skip "usql \"sqlite:///x\" -c 'SELECT 1\\'; rm -rf /tmp"      # 同上，分号变体
+check skip 'usql "sqlite:///x" -c "SELECT 1" -c "DROP TABLE t"'     # 多个 -c 依次执行，只检第一个会漏写语句
+check skip "usql \"sqlite:///x\" -c 'SELECT 1' -c 'DROP TABLE t'"   # 多个 -c（单引号形式）
+check skip 'usql "sqlite:///x" -c "SELECT 1" -f evil.sql'           # -c 与 -f 并存：usql 先跑文件内容（不受检）
+check skip 'usql "sqlite:///x" --file=evil.sql -c "SELECT 1"'       # --file= 长选项变体
+check skip 'usql "sqlite:///x" -f=evil.sql -c "SELECT 1"'           # -f= 变体
+check skip 'usql "sqlite:///x" -c "SELECT 1 \"x\" ; DELETE FROM t"' # 旧提取被 \" 截断，分号+写语句藏在截断点后
+check skip 'usql "sqlite:///x" --command "SELECT 1"'                # --command 长选项不受检，不放行
+check skip 'usql "sqlite:///x" -c "SELECT 1" && usql "sqlite:///x" -c "DROP TABLE t"'   # 段统一为 usql，多 -c 检查兜底
+
+# ---- 应放行：CR-2026-08 修复保住的合法路径（防止后续"修复"成误伤）----
+check allow 'usql "sqlite:///x" -c "SELECT 1" 2>&1'             # 引号外 N>&N fd 重定向豁免（引号感知版）
+check allow 'usql "sqlite:///x" -c="SELECT 1"'                  # -c= 无空格形式（Go flag 语义，bash 分词为单一 token）
 
 # ---- 不放行：fail-closed 误伤（可接受，记录在案防"修复"成放行）----
 check skip 'playwright-cli eval "click(); submit()"'       # 引号内多语句（有意 fail-closed，方向1不放开分号）
+check skip 'playwright-cli eval "a\; b"'                    # 双引号内 \; 非 bash 转义，分号仍字面量须 fail-closed（防回归）
 
 # ---- 降级路径：畸形输入 / 空命令（应无输出且退出码 0）----
 if out=$(echo 'not-json' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
@@ -117,10 +139,19 @@ if out=$(echo '{"tool_input":{}}' | bash scripts/allow-tools.sh) && [ -z "$out" 
 else
   fail=$((fail + 1)); echo "FAIL 空命令应静默退出，实际: $out"
 fi
-if out=$(printf '{"tool_input":{"command":"playwright-cli a\nrm -rf /"}}' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
+# 换行夹带命令：JSON 里 \n 转义、经 jq 还原为真实换行。注意用 printf %s——
+# 旧实现裸 printf 会把格式串里的 \n 输出成裸换行产生非法 JSON，用例在 jq 解析处静默退出，
+# 测的是"畸形 JSON 降级"而非"多行命令拆段"。
+if out=$(printf '%s' '{"tool_input":{"command":"playwright-cli a\nrm -rf /"}}' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
   pass=$((pass + 1))
 else
   fail=$((fail + 1)); echo "FAIL 换行夹带命令应不放行，实际: $out"
+fi
+# 引号跨行未闭合（-c 的 SQL 带真实换行）：tokenize 输出 UNTERM，fail-closed 不放行
+if out=$(printf '%s' '{"tool_input":{"command":"usql \"sqlite:///x\" -c \"SELECT 1\nFROM t\""}}' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1)); echo "FAIL 引号跨行未闭合应不放行，实际: $out"
 fi
 
 echo "hook 放行回归：$pass 通过，$fail 失败"

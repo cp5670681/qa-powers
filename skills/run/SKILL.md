@@ -1,7 +1,7 @@
 ---
 name: run
 description: 执行测试用例（guided-run）。开头选环境（local/test），逐条用例：脚本路由造数（.sql→usql、其他脚本→本地 runner 或 k8s pod）→ playwright-cli 按业务步骤驱动有头浏览器 → 三层断言（UI/网络/DB，DB 可 usql 或应用内脚本）→ 清理 → 产出 result.yaml。用户说"跑用例"、"执行测试"、"继续测试"时使用。
-allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Read, Grep, Glob, Write, Edit, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, Agent
+allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), Bash(mkdir:*), Bash(date:*), Bash(git:*), Bash(bash:*), Read, Grep, Glob, Write, Edit, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, Agent
 ---
 
 # run：guided-run 执行用例
@@ -29,7 +29,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
    - 用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
 5. **执行模式选择（AskUserQuestion）**：
    - 顺序 / 并发。并发时再问并发上限（默认 3，可选 2/3/4——每个 worker 是一个独立浏览器实例）
-   - **有头 / 无头（两种模式都问）**：推荐默认**无头**（证据靠截图/快照，无头更快更稳、多开不抢资源）；有头用于演示或排查单条 case 时选。**有头 + 并发提示**：每个 worker 是有头浏览器窗口（3 worker = 3 窗口抢资源），有头并发建议把上限降到 2
+   - **有头 / 无头（两种模式都问）**：默认值取 config `browser.headed`（init 沉淀的偏好；字段缺失时默认无头——证据靠截图/快照，无头更快更稳、多开不抢资源）；有头用于演示或排查单条 case 时选。**有头 + 并发提示**：每个 worker 是有头浏览器窗口（3 worker = 3 窗口抢资源），有头并发建议把上限降到 2
    - 选择记入 commands.log 与 run 级 result.yaml（`mode: sequential|parallel`、`headed: true|false`、`workers: N`）
 6. 加载登录态并开浏览器（顺序模式）：`playwright-cli open <envs.<ENV>.base_url> --browser <channel> [--headed]` → `playwright-cli state-load <envs.<ENV>.auth.default 账号的 state_file>`（初始加载 default 主账号；无 auth 段=免登录，跳过登录态加载） → `playwright-cli goto <envs.<ENV>.base_url>`，确认已登录（未登录 → 先按 §1 多账号切换的**自动登录**流程重新登录沉淀；仍失败 → 整个 run BLOCKED，走环境故障流程）
 7. `playwright-cli tracing-start`，**并确认输出无 Error**（如 `Tracing is not started` 类报错要在开跑前处理）。注意：关键命令不要用管道截取输出（`| tail`会吞掉报错），必须看到完整成功输出再继续；tracing 确实起不来时降级为仅截图取证，在 commands.log 标注
@@ -234,7 +234,8 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 
 ```yaml
 run_id: 2026-08-23-143015
-module: ORD-1234-checkout
+modules:                # 本次 run 覆盖的全部模块（= cases/ 下入选用例所属目录名；单模块 run 也是列表）
+  - ORD-1234-checkout
 env: local              # local | test（§0.2 所选）
 mode: parallel          # sequential | parallel
 workers: 3              # 并发模式时有效

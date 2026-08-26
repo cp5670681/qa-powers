@@ -1,7 +1,7 @@
 ---
 name: design
 description: 根据需求设计 UI 测试用例。读取需求（文本/Jira/Confluence），强制做前后端仓库 diff 影响分析，交互式澄清后生成用例到 .qa-powers/cases/。用户说"设计用例"、"测一下 XX 需求"时使用。
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), AskUserQuestion, WebFetch
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), Bash(bash:*), AskUserQuestion, WebFetch
 ---
 
 # design：需求 → 用例

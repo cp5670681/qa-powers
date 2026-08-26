@@ -53,4 +53,4 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`demo: http://localhost:${PORT}  db: ${DB}`));
+server.listen(PORT, "127.0.0.1", () => console.log(`demo: http://localhost:${PORT}  db: ${DB}`));

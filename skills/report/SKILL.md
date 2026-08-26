@@ -1,7 +1,7 @@
 ---
 name: report
 description: 生成测试报告。读取 .qa-powers/evidence/<run-id>/result.yaml（机器契约），汇总四态统计与失败详情，输出 Markdown 报告。用户说"生成报告"、"看看测试结果"时使用。
-allowed-tools: Read, Write, Bash(ls:*), AskUserQuestion
+allowed-tools: Read, Write, Bash(ls:*), Bash(bash:*), AskUserQuestion
 ---
 
 # report：生成测试报告
@@ -22,7 +22,7 @@ allowed-tools: Read, Write, Bash(ls:*), AskUserQuestion
 ```markdown
 # 测试报告 <run-id>
 
-模块：<module>　　时间：<生成时间>
+模块：<modules 列表，逗号分隔；单模块也照列>　　时间：<生成时间>
 
 ## 总览
 
@@ -44,7 +44,7 @@ case result.yaml 带 `account:` 时，用例名后附账号（如 `case-02 下�
 
 ## 覆盖改动点与验证结论
 
-从 `cases/<模块>/meta.yaml` 的 `changes` 段拉取（id + desc，旧用例无 desc 时用 ref 兜底），按各 case 的 `covers` 关联：每个改动点列出覆盖它的 case 及其状态（✅ PASS / ❌ FAIL），给一句验证结论（结合该 case 断言的 actual 概括）。meta 无 `changes` 段（旧用例）时跳过本表。
+从 run 级 result.yaml 的 `modules` 列表逐模块读取 `cases/<模块>/meta.yaml` 的 `changes` 段拉取（id + desc，旧用例无 desc 时用 ref 兜底），按各 case 的 `covers` 关联：每个改动点列出覆盖它的 case 及其状态（✅ PASS / ❌ FAIL），给一句验证结论（结合该 case 断言的 actual 概括）；多模块 run 时按模块分小节展示。meta 无 `changes` 段（旧用例）时跳过该模块的表。
 
 | 改动点 | 覆盖用例 | 验证结论 |
 |---|---|---|

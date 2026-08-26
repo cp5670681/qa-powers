@@ -21,6 +21,28 @@ for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.
   fi
 done
 
+# hooks.json 结构：每个 hook 事件必须是数组、每项含 matcher 与 hooks[0].command（有 jq 才查）
+if command -v jq >/dev/null 2>&1; then
+  while IFS= read -r event; do
+    n=$(jq -r --arg e "$event" '.hooks[$e] | length' hooks/hooks.json 2>/dev/null)
+    for ((i = 0; i < n; i++)); do
+      jq -e --arg e "$event" --argjson i "$i" \
+        '.hooks[$e][$i].matcher and (.hooks[$e][$i].hooks[0].command | type == "string")' \
+        hooks/hooks.json >/dev/null 2>&1 || { echo "hooks.json 结构不合法：$event[$i] 缺 matcher 或 hooks[0].command"; fail=1; }
+    done
+  done < <(jq -r '.hooks | keys[]' hooks/hooks.json 2>/dev/null)
+fi
+
+# shell 脚本语法（含测试脚本）
+for f in scripts/*.sh tests/*.sh; do
+  bash -n "$f" || { echo "bash 语法错误：$f"; fail=1; }
+done
+
+# demo server JS 语法（有 node 才查）
+if command -v node >/dev/null 2>&1; then
+  node --check tests/demo/server.js || { echo "node 语法错误：tests/demo/server.js"; fail=1; }
+fi
+
 # 版本同步：plugin.json 与 marketplace.json 的 version 必须一致（发版靠版本号识别，两处不同步 /plugin update 会被跳过）
 if command -v jq >/dev/null 2>&1; then
   pv=$(jq -r '.version' .claude-plugin/plugin.json 2>/dev/null)

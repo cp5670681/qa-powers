@@ -56,6 +56,17 @@ check quiet 'patch 高版本（0.3.10 vs 0.3.7）' 0.3.10 0.3.7
 check quiet 'config 无 plugin_version'        0.3.7 none
 check quiet 'config 文件不存在'               0.3.7 missing
 
+# ---- 行内注释：plugin_version 值后带 # 注释，注释不应并进版本串致误报 ----
+mkplugin 0.3.8
+printf 'plugin_version: 0.3.7 # init 时写入\n' > "$tmp/c.yaml"
+out=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash scripts/version-check.sh "$tmp/c.yaml" 2>&1); status=$?
+if [ "$status" -eq 0 ] && [ -z "$out" ]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL 期望静默 exit0（行内注释被并入版本串？）| status=%s out=%s\n' "$status" "$out"
+fi
+
 # ---- 非插件环境：CLAUDE_PLUGIN_ROOT 未设时从脚本自身目录读版本 ----
 out=$(bash scripts/version-check.sh /tmp/opencode/nonexistent-config.yaml 2>&1); status=$?
 if [ "$status" -eq 0 ] && [ -z "$out" ]; then

@@ -9,22 +9,67 @@
 
 input=$(cat)
 
+# bash 语义分词器（is_readonly_usql_query 取参专用，与拆段/元字符扫描共用同一套引号语义）：
+#   引号外 \x 转义下一字符；单引号内全部字面（\ 也是字面量，引号在下一个 ' 处闭合）；
+#   双引号内仅 \" \\ \$ \` 转义（bash 语义），还原为被转义字符本身。
+# 每行输出一个「解码后」的完整 token（引号拼接、转义还原），供 -c/-f 参数判定。
+# 引号未在行内闭合（跨行 SQL）输出 \x01UNTERM 标记：调用方一律拒绝（fail-closed）。
+# 旧实现用 grep/sed 按文本提取 -c 值，与 bash 真实解析在四处脱节（\' 截断、\" 截断、
+# 多 -c 只检第一个、-c+-f 并存漏检），已被实证绕过，故弃用。
+tokenize() {
+  printf '%s\n' "$1" | awk '
+  { line=$0; n=length(line); i=1; tok=""; have=0; unterm=0
+    while (i<=n) {
+      c=substr(line,i,1)
+      if (c==" " || c=="\t") { if (have) { print tok; tok=""; have=0 }; i++; continue }
+      if (c=="\\") { have=1; if (i<n) { tok=tok substr(line,i+1,1); i+=2 } else { tok=tok c; i++ }; continue }
+      if (c==sprintf("%c",39)) {
+        have=1; i++
+        while (i<=n && substr(line,i,1)!=sprintf("%c",39)) { tok=tok substr(line,i,1); i++ }
+        if (i<=n) i++; else unterm=1
+        continue
+      }
+      if (c=="\"") {
+        have=1; i++; closed=0
+        while (i<=n) {
+          d=substr(line,i,1)
+          if (d=="\"") { i++; closed=1; break }
+          if (d=="\\" && i<n) { e=substr(line,i+1,1)
+            if (e=="\"" || e=="\\" || e=="$" || e=="`") { tok=tok e; i+=2; continue } }
+          tok=tok d; i++
+        }
+        if (!closed) unterm=1
+        continue
+      }
+      tok=tok c; have=1; i++
+    }
+    if (have) print tok
+    if (unterm) printf "%sUNTERM\n", sprintf("%c",1)
+  }'
+}
+
 # 判断 usql 命令是否为「单条只读内联查询」（-c 带引号，以只读关键字开头）。
-# 读取 -c 的值：优先双引号、否则单引号；提取失败视为非只读（回退人工确认）。
-# 防御（宁可多确认、不误放行）：
-#   - 无 -c 内联（如 -f 脚本文件）→ 不放行，脚本内容无从静态判定
+# 取参走 tokenize（bash 语义解码），而非文本提取。防御（宁可多确认、不误放行）：
+#   - 无 -c 内联（含 --command 长选项等未识别形式）→ 不放行，无从静态判定
+#   - 引号跨行未闭合 → 不放行（tokenize 输出 UNTERM）
+#   - 出现 -f/--file（含与 -c 并存：usql 会先跑文件再跑 -c，文件内容不受检）→ 不放行
+#   - 出现多个 -c（usql 会依次执行每个 -c，只检第一个会漏写语句）→ 不放行
 #   - 内嵌分号（多语句）→ 不放行；结尾单个分号允许
 #   - WITH（数据修改 CTE）、INTO（SELECT INTO 建表）→ 不放行
 #   - 显式写关键字（INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/CALL/MERGE）→ 不放行
+#   - EXPLAIN ANALYZE（真实执行）、PRAGMA 赋值（改连接状态）→ 不放行
 #   - 首词不是只读关键字（SELECT/SHOW/DESC/DESCRIBE/PRAGMA/EXPLAIN/VALUES）→ 不放行
 is_readonly_usql_query() {
-  local cmd="$1" sql
-  sql=$(printf '%s\n' "$cmd" | grep -oE '[[:space:]]-c([[:space:]]*=[[:space:]]*|[[:space:]]+)"[^"]*"' 2>/dev/null \
-        | sed -E 's/^[[:space:]]*-c([[:space:]]*=[[:space:]]*|[[:space:]]+)"//; s/"$//' | head -1)
-  if [ -z "$sql" ]; then
-    sql=$(printf '%s\n' "$cmd" | grep -oE "[[:space:]]-c([[:space:]]*=[[:space:]]*|[[:space:]]+)'[^']*'" 2>/dev/null \
-          | sed -E "s/^[[:space:]]*-c([[:space:]]*=[[:space:]]*|[[:space:]]+)'//; s/'$//" | head -1)
-  fi
+  local cmd="$1" toks sql n
+  toks=$(tokenize "$cmd")
+  if printf '%s\n' "$toks" | grep -qF "$(printf '\001')UNTERM"; then return 1; fi
+  if printf '%s\n' "$toks" | grep -qxE -- '-f|--file|-f=.*|--file=.*'; then return 1; fi
+  n=$(printf '%s\n' "$toks" | grep -cxE -- '-c|-c=.*')
+  [ "$n" -eq 1 ] || return 1
+  sql=$(printf '%s\n' "$toks" | awk '
+    { if (pending) { print; exit }
+      if ($0=="-c") pending=1
+      else if ($0 ~ /^-c=/) { print substr($0,4); exit } }')
   [ -n "$sql" ] || return 1
 
   sql=${sql%;}
@@ -69,6 +114,8 @@ split_segments() {
     while (i<=n) {
       c=substr(line,i,1)
       if (q=="") {
+        # 引号外 \ 转义下一字符（bash 语义）：\" 不开启引号，其后分号/管道必须照常拆段
+        if (c=="\\" && i+1<=n) { seg=seg c substr(line,i+1,1); i+=2; continue }
         if (c=="\"") { q="\""; seg=seg c; i++; continue }
         if (c==sprintf("%c",39)) { q=sprintf("%c",39); seg=seg c; i++; continue }
         if (c=="&" && substr(line,i+1,1)=="&") { if (seg!="") print seg; seg=""; i+=2; continue }
@@ -76,9 +123,15 @@ split_segments() {
         if (c=="|") { if (seg!="") print seg; seg=""; i++; continue }
         if (c==";") { if (seg!="") print seg; seg=""; i++; continue }
         seg=seg c; i++
-      } else {
-        if (c==q) { q=""; seg=seg c; i++; continue }
+      } else if (q=="\"") {
+        # 双引号内 \" \\ 不闭合引号（bash 语义），原样保留即可（拆段只关心分隔符位置）
         if (c=="\\" && i+1<=n) { seg=seg c substr(line,i+1,1); i+=2; continue }
+        if (c==q) { q=""; seg=seg c; i++; continue }
+        seg=seg c; i++
+      } else {
+        # 单引号内 \ 是字面量、引号仅在下一个单引号字符处闭合（bash 语义）：
+        # 否则 SELECT 1\ 反斜杠引号 会被误判为未闭合，把其后分号/&& 分隔的段藏进引号内逃过拆段
+        if (c==q) { q=""; seg=seg c; i++; continue }
         seg=seg c; i++
       }
     }
@@ -97,8 +150,14 @@ has_quote_inner_semicolon() {
         if (c=="\"") q="\""
         else if (c==sprintf("%c",39)) q=sprintf("%c",39)
         else if (c=="\\" && i+1<=n) i++
+      } else if (q=="\"") {
+        # 双引号内仅 \" \\ \$ \` 转义（bash 语义）：\; 不是转义，分号仍是字面量须照常标记
+        if (c=="\\" && i+1<=n) { e=substr(line,i+1,1)
+          if (e=="\"" || e=="\\" || e=="$" || e=="`") { i++; i++; continue } }
+        if (c==q) q=""
+        else if (c==";") print "HAS"
       } else {
-        if (c=="\\" && i+1<=n) { i++; i++; continue }
+        # 单引号内 \ 是字面量、仅单引号字符闭合（bash 语义，与 split_segments/tokenize 一致）
         if (c==q) q=""
         else if (c==";") print "HAS"
       }
@@ -111,11 +170,10 @@ has_quote_inner_semicolon() {
 # 引号内的这些字符一律当字面量（SQL 里的 a='x&y'、URL 查询串 ?a=1&b=2、playwright-cli 的填充值都是字面量）。
 # 引号外的单个 & 是后台执行，< > 是输入/输出重定向，` $() 是命令替换——含任一即不放行。
 # 与旧版「整串无脑 grep」不同：旧版把引号内字面量也误伤（URL &、SQL &、2>&1）；新版只扫引号外。
-# 豁免：&& 是已拆段的合法分隔符（跳过）；N>&N / N>&- 是 fd 重定向（无副作用，预替换成安全占位）。
+# 豁免：&& 是已拆段的合法分隔符（跳过）；N>&N / N>&- 是 fd 重定向（无副作用，引号感知豁免，
+# 不再做引号不感知的全局 sed 预替换——那会在引号扫描前吞字符，依赖运气而非设计）。
 has_danger_metachars() {
-  local cleaned
-  cleaned=$(printf '%s\n' "$1" | sed -E 's/[0-9]>(&[0-9]|&-)/{FD}/g')
-  printf '%s\n' "$cleaned" | awk '
+  printf '%s\n' "$1" | awk '
   { line=$0; n=length(line); i=1; q=""
     while (i<=n) {
       c=substr(line,i,1)
@@ -123,6 +181,10 @@ has_danger_metachars() {
         if (c=="\\" && i+1<=n) { i+=2; continue }   # 引号外 \ 转义：\" \& \$ 不触发下文
         if (c=="\"") { q="\""; i++; continue }
         if (c==sprintf("%c",39)) { q=sprintf("%c",39); i++; continue }
+        if (c ~ /[0-9]/) {
+          rest=substr(line,i)
+          if (match(rest, /^[0-9]+>&[0-9]+/) || match(rest, /^[0-9]+>&-/)) { i+=RLENGTH; continue }   # N>&N / N>&- fd 重定向
+        }
         if (c=="&") {
           if (substr(line,i+1,1)=="&") { i+=2; continue }   # && 合法分隔符
           print "BAD"; exit

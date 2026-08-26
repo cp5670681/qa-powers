@@ -23,7 +23,7 @@ fi
 # config 记录的版本
 cfg=""
 if [ -f "$config" ]; then
-  cfg=$(awk -F: '/^[[:space:]]*plugin_version[[:space:]]*:/{sub(/^[[:space:]]*/,"",$2); sub(/[[:space:]]*\r?$/,"",$2); gsub(/["'"'"']/,"",$2); print $2; exit}' "$config")
+  cfg=$(awk -F: '/^[[:space:]]*plugin_version[[:space:]]*:/{sub(/^[[:space:]]*/,"",$2); sub(/[[:space:]]*#.*$/,"",$2); sub(/[[:space:]]*\r?$/,"",$2); gsub(/["'"'"']/,"",$2); print $2; exit}' "$config")
 fi
 
 [ -n "$cur" ] && [ -n "$cfg" ] || exit 0

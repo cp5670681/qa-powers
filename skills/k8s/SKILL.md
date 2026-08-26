@@ -1,7 +1,7 @@
 ---
 name: k8s
 description: 远程 k8s 环境日常操作。用户要看后端日志、查 pod 状态、进 pod 或 rails console、在容器里跑脚本、换节点，或测试执行中疑似远程环境故障需排查时使用；经 JumpServer 堡垒机 ssh 通道访问。
-allowed-tools: Bash(ssh:*), Bash(cat:*), Read, AskUserQuestion
+allowed-tools: Bash(ssh:*), Bash(cat:*), Bash(bash:*), Read, AskUserQuestion
 ---
 
 # k8s：远程 k8s 环境操作（经堡垒机）

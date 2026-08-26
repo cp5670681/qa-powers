@@ -1,7 +1,7 @@
 ---
 name: init
 description: 初始化 qa-powers 测试环境。生成 .qa-powers/config.yaml 与目录骨架，配置本地(local)与/或测试(test)两套环境，校验 playwright-cli/usql/代码仓库/数据库/登录态/脚本执行后端可用，并沉淀登录态。用户说"初始化测试环境"或首次使用 qa-powers 时使用。
-allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*), Bash(ssh:*), Bash(test:*), Bash(which:*), Bash(ls:*), Bash(grep:*), Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*), Bash(ssh:*), Bash(test:*), Bash(which:*), Bash(ls:*), Bash(grep:*), Bash(jq:*), Bash(awk:*), Bash(bash:*), Read, Write, Edit, AskUserQuestion
 ---
 
 # init：初始化测试环境
@@ -61,7 +61,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 |---|---|---|
 | playwright-cli | `playwright-cli --version` | `npm install -g @playwright/cli@latest` |
 | 浏览器 | 探测（Linux/WSL）：`which google-chrome google-chrome-stable msedge`；（macOS）：`ls /Applications \| grep -E "Google Chrome\|Microsoft Edge"`；有 → `playwright-cli open about:blank --browser <chrome\|msedge> --<模式>` 后 `close`；无系统浏览器才 `playwright-cli install-browser chromium`（幂等，会下载） | 系统浏览器在但打不开：检查版本与权限；chromium 下载失败：确认网络后重试 |
-| usql | `usql --version` | `brew install usql` |
+| usql | `usql --version` | 到 https://github.com/xo/usql/releases 下对应平台二进制（macOS brew 构建可能失败，不推荐） |
 | 前端仓库 | `git -C <path> rev-parse --is-inside-work-tree` | 检查路径 |
 | 后端仓库 | 同上（配置了才查） | 同上 |
 | 每环境 DB 连接 | `usql "<对应 envs.<env>.db.url>" -c 'select 1'`；配了 `db.dbs` 时每个别名库也 `usql "<dbs.<别名>.url>" -c 'select 1'` | 检查连接串与网络；报 bad connection/driver 错先查密码特殊字符是否漏 URL 编码（`&`→`%26` 等） |
@@ -82,7 +82,7 @@ mkdir -p .qa-powers/cases .qa-powers/evidence .qa-powers/reports
 plugin_version: <从 $CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json 读（jq -r '.version' 或 awk）；仅本插件安装后 config 与流程核对版本用，不参与任何流程逻辑>
 browser:                 # 两环境共享
   channel: chrome        # chrome | msedge | chromium
-  headed: true           # 有头模式
+  headed: true           # 有头模式（run 以此为浏览器模式问题的默认值，执行时仍可现场切换）
 repos:                   # 共享：本地 checkout
   frontend: { path: <收集值>, base: <探测的默认分支> }   # base 用第 1 节探测出的默认分支（main/master）
   backend:  { path: <收集值>, base: <探测的默认分支>, type: rails }   # 无后端则删除此行；type=rails|node|python|other（第 1 节探测写入）
