@@ -86,6 +86,10 @@ tests/           开发用：test-allow-tools.sh——hook 放行回归测试；
 
 见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## 致谢
+
+受 [obra/superpowers](https://github.com/obra/superpowers) 启发。
+
 ## License
 
 [MIT](LICENSE)
