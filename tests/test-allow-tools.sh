@@ -35,6 +35,8 @@ check allow 'playwright-cli goto http://x/#/works/list'
 check allow 'playwright-cli snapshot && playwright-cli fill "#user" "admin"'
 check allow 'DEBUG=1 playwright-cli snapshot'
 check allow 'A=1 playwright-cli a && B=2 playwright-cli b'
+check allow 'playwright-cli open "http://x?a=1&b=2"'          # URL 查询串 &（引号内字面量，方向1放行）
+check allow 'playwright-cli fill "a|b" "a>b"'                 # 填充值含 | >（引号内字面量，方向1放行）
 
 # ---- 不放行：混合命令 / 其他工具 ----
 check skip 'cd /repo && playwright-cli goto http://x'
@@ -51,6 +53,13 @@ check allow 'usql "sqlite:///x" -c "PRAGMA table_info(orders)"'
 check allow 'usql "sqlite:///x" -c "EXPLAIN SELECT 1"'
 check allow 'usql "sqlite:///x" -c "SELECT 1;"'
 check allow "usql \"sqlite:///x\" -c 'SELECT id FROM users WHERE city = '\''Paris'\'''"
+check allow 'usql "sqlite:///x" -c "SELECT id FROM orders WHERE flags & 8 = 8"'   # 引号内 &（位运算，方向1放行）
+check allow 'usql "sqlite:///x" -c "\d employees"'            # psql 展示元命令（方向2）
+check allow 'usql "sqlite:///x" -c "\dt"'
+check allow 'usql "sqlite:///x" -c "\l"'
+check allow 'usql "sqlite:///x" -c "\du"'
+check allow 'usql "sqlite:///x" -c "\dS"'
+check allow 'usql "sqlite:///x" -c "\d+ users"'
 
 # ---- 不放行：usql 写库 / 脚本文件 / 无法静态判定的查询 ----
 check skip 'usql "sqlite:///x" -f s.sql'
@@ -69,6 +78,16 @@ check skip 'usql "sqlite:///x" -c "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM t"'
 check skip 'usql "sqlite:///x" -c "PRAGMA writable_schema=ON"'
 check skip 'usql "sqlite:///x" -c "SELECT 1" && rm -rf /tmp/x'
 check skip 'usql "sqlite:///x" -c "SELECT 1" | tee /tmp/out.txt'
+check skip 'usql "sqlite:///x" -c "\! rm -rf /"'              # \! shell 转义
+check skip 'usql "sqlite:///x" -c "\copy employees to /tmp/out.csv"'   # \copy 写文件
+check skip 'usql "sqlite:///x" -c "\c otherdb"'              # \c 切库
+check skip 'usql "sqlite:///x" -c "\o /tmp/out.txt"'         # \o 输出重定向
+check skip 'usql "sqlite:///x" -c "\gset"'                    # \gset 执行
+check skip 'usql "sqlite:///x" -c "\cd /tmp"'                # \cd shell cd
+check skip 'usql "sqlite:///x" -c "\set var 1"'              # \set 会话变量
+check skip 'usql "sqlite:///x" -c "\dup"'                     # 超长前缀伪装（\d* 边界：命令名后必跟空白/串尾）
+check skip 'usql "sqlite:///x" -c "\dump t"'                  # 同上
+check skip 'usql "sqlite:///x" -c "\delete"'                  # \d + 非白名单命令名（de 不在白名单）
 
 # ---- 不放行：注入向量（安全边界，最高优先级防回归）----
 check skip 'playwright-cli a & rm -rf /'                     # & 后台执行
@@ -78,11 +97,14 @@ check skip 'playwright-cli $(rm -rf /tmp/x)'                 # $() 命令替换
 check skip 'playwright-cli <(rm -rf /tmp/x)'                 # 进程替换
 check skip 'playwright-cli a > /etc/passwd'                  # 重定向写文件
 check skip 'playwright-cli screenshot >> ~/.bashrc'          # 追加写 shell 配置
-check skip 'playwright-cli open "http://x?a=1&b=2"'          # URL 查询串 &（误伤，走确认）
+check skip 'playwright-cli foo "$(id)"'                        # 双引号内 $() 仍是命令替换（方向1回归防漏）
+check skip 'usql "sqlite:///x" -c "SELECT $(id)"'              # 同上，usql 读参被替换
+check skip 'playwright-cli foo "`id`"'                         # 双引号内反引号命令替换
+check skip 'playwright-cli a\" & rm -rf /'                     # 引号外 \" 转义不开启引号 + 后台 &
+check skip 'playwright-cli a\" > /etc/passwd'                  # 引号外 \" 转义不开启引号 + 重定向
 
 # ---- 不放行：fail-closed 误伤（可接受，记录在案防"修复"成放行）----
-check skip 'playwright-cli eval "click(); submit()"'
-check skip 'playwright-cli fill "a|b" "a>b"'
+check skip 'playwright-cli eval "click(); submit()"'       # 引号内多语句（有意 fail-closed，方向1不放开分号）
 
 # ---- 降级路径：畸形输入 / 空命令（应无输出且退出码 0）----
 if out=$(echo 'not-json' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then

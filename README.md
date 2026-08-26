@@ -75,7 +75,7 @@ tests/           开发用：test-allow-tools.sh——hook 放行回归测试；
 
 - 凭据明文存于 `.qa-powers/config.yaml`（明换便利，属用户选择）；init 自动写入被测项目 `.gitignore`（覆盖 `config.yaml` 与 `auth-*.json`），请勿移出忽略名单
 - 插件绝不 checkout / 修改被测仓库，只读分析
-- 插件自带 PreToolUse hook：`playwright-cli` 命令（含纯 playwright-cli 组成的复合命令）与 **usql 只读内联查询**（单条 `SELECT/SHOW/DESC/PRAGMA(查询型)/EXPLAIN(不含 ANALYZE)`，`-c` 带引号、无 `-f` 脚本文件、无写关键字/多语句/WITH/INTO/EXPLAIN ANALYZE）自动放行、免权限确认；其余命令（写库、usql `-f` 脚本、ssh、脚本执行等）仍走正常确认。机器无 jq 时自动退回默认确认流程
+- 插件自带 PreToolUse hook：`playwright-cli` 命令（含纯 playwright-cli 组成的复合命令）与 **usql 只读内联查询**自动放行、免权限确认。只读判定覆盖：单条 `SELECT/SHOW/DESC/PRAGMA(查询型)/EXPLAIN(不含 ANALYZE)/VALUES`，以及 **psql 展示元命令**（`\d`、`\dt`、`\dv`、`\di`、`\dn`、`\df`、`\ds`、`\dp`、`\do`、`\dx`、`\db`、`\du`、`\l`、`\?`、`\d+`，命令 token 后只跟空白/表名/串尾）；`-c` 带引号、无 `-f` 脚本文件、无写关键字/多语句/WITH/INTO/EXPLAIN ANALYZE。元字符防线为**引号感知**——SQL/URL/填充值在引号内的 `& < > \` $(` 视为字面量（如 `?a=1&b=2`、`2>&1`）：单引号内全字面；双引号内 `& < >` 为字面量、但 `$(` 与反引号仍是命令替换、照拦不误（如 `"SELECT $(id)"`）；引号外的 `\` 转义下一字符（`\"` 不开启引号），引号外的 `& < > \` $(`` 才拦截后台执行/重定向/命令替换；`&&` 与 fd 重定向（`N>&N`）豁免。写库、psql 危险元命令（`\!`、`\o`、`\copy`、`\c`、`\cd`、`\set`、`\gset` 等）、usql `-f` 脚本、ssh、脚本执行等仍走正常确认。机器无 jq 时自动退回默认确认流程
 - 浏览器由 playwright-cli 管理，登录态文件 `.qa-powers/auth-*.json` 含会话 cookie，同样在忽略名单内
 
 ## 开发与贡献

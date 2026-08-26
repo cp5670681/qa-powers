@@ -47,6 +47,12 @@ is_readonly_usql_query() {
   if printf '%s' "$sql" | grep -qiE '(^|[^a-zA-Z_])(insert|update|delete|create|alter|drop|truncate|grant|revoke|call|merge)([^a-zA-Z_]|$)'; then
     return 1
   fi
+  # psql/usql 纯展示元命令白名单：命令 token 后必须跟空白或串尾，杜绝 \dup/\dump 等超长前缀被放行。
+  # 仅放行无副作用（describe/list）：\d+（verbose）与 \d、\dt、\dv、\di、\dn、\df、\ds、\dp、\do、\dx、\db、\du、\l、\? 均只读。
+  # 危险元命令（\! shell、\o 写文件、\copy、\c/\connect 切库、\cd、\set/\unset、\gset/\gexec、\e、\i/\ir）不以「上述命令名+边界」开头，落到下方 return 1 拦截。
+  if printf '%s' "$sql" | grep -qE '^\\d\+?([[:space:]]|$)|^\\(dt|dv|di|dn|df|ds|dS|dp|do|dx|db|du|l|[?])([[:space:]]|$)'; then
+    return 0
+  fi
   case "$sql" in
     [Ss][Ee][Ll][Ee][Cc][Tt]*|[Ss][Hh][Oo][Ww]*|[Dd][Ee][Ss][Cc][Rr][Ii][Bb][Ee]*|[Dd][Ee][Ss][Cc][[:space:]]*|[Pp][Rr][Aa][Gg][Mm][Aa]*|[Ee][Xx][Pp][Ll][Aa][Ii][Nn]*|[Vv][Aa][Ll][Uu][Ee][Ss]*)
       return 0 ;;
@@ -101,15 +107,52 @@ has_quote_inner_semicolon() {
   }' | grep -q HAS
 }
 
+# 引号感知的 fail-closed 元字符防线：&(非 &&)、<、>、`、$(
+# 引号内的这些字符一律当字面量（SQL 里的 a='x&y'、URL 查询串 ?a=1&b=2、playwright-cli 的填充值都是字面量）。
+# 引号外的单个 & 是后台执行，< > 是输入/输出重定向，` $() 是命令替换——含任一即不放行。
+# 与旧版「整串无脑 grep」不同：旧版把引号内字面量也误伤（URL &、SQL &、2>&1）；新版只扫引号外。
+# 豁免：&& 是已拆段的合法分隔符（跳过）；N>&N / N>&- 是 fd 重定向（无副作用，预替换成安全占位）。
+has_danger_metachars() {
+  local cleaned
+  cleaned=$(printf '%s\n' "$1" | sed -E 's/[0-9]>(&[0-9]|&-)/{FD}/g')
+  printf '%s\n' "$cleaned" | awk '
+  { line=$0; n=length(line); i=1; q=""
+    while (i<=n) {
+      c=substr(line,i,1)
+      if (q=="") {
+        if (c=="\\" && i+1<=n) { i+=2; continue }   # 引号外 \ 转义：\" \& \$ 不触发下文
+        if (c=="\"") { q="\""; i++; continue }
+        if (c==sprintf("%c",39)) { q=sprintf("%c",39); i++; continue }
+        if (c=="&") {
+          if (substr(line,i+1,1)=="&") { i+=2; continue }   # && 合法分隔符
+          print "BAD"; exit
+        }
+        if (c=="<" || c==">" || c=="`") { print "BAD"; exit }
+        if (c=="$" && substr(line,i+1,1)=="(") { print "BAD"; exit }
+        i++
+      } else if (q=="\"") {
+        if (c=="\\" && i+1<=n) { i+=2; continue }   # 双引号内 \ 转义字面（\" \` \$ \\）
+        if (c=="\"") { q=""; i++; continue }
+        if (c=="`") { print "BAD"; exit }            # 双引号内反引号 = 命令替换
+        if (c=="$" && substr(line,i+1,1)=="(") { print "BAD"; exit }  # 双引号内 $() = 命令替换
+        i++
+      } else {  # 单引号：全部字面，读到单引号闭合（内里反斜杠不转义）
+        if (c==q) { q="" }
+        i++
+      }
+    }
+  }' | grep -q BAD
+}
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
 [ -n "$cmd" ] || exit 0
 
-# fail-closed 元字符防线：&, <, >, `, $( 能在目标工具之外执行命令 / 写任意文件
-# （后台执行 &、命令替换、进程替换、重定向）。含任一即不放行。&& 是已拆段的合法分隔符，先剔除再查；
-# URL / SQL 字面量里的这些字符会被误伤退回人工确认——宁可多确认，不误放行。
-if printf '%s' "$cmd" | sed 's/&&//g' | grep -qE '[&<>`]|\$\('; then
+# fail-closed 元字符防线（引号感知）：引号外的 &(非 &&)、<、>、`、$( 能在目标工具之外执行命令 / 写任意文件
+# （后台执行 &、单/双输入输出重定向、命令替换、进程替换）。含任一即不放行。&& 是合法分隔符、N>&N 是 fd 重定向，二者豁免。
+# URL / SQL 字面量里的这些字符（引号内）是数据不是注入，不再误伤。宁可多确认，不误放行。
+if has_danger_metachars "$cmd"; then
   exit 0
 fi
 
