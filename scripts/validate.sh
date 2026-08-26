@@ -49,5 +49,8 @@ done
 # hook 放行回归（权限放行脚本，注入向量防回归；无 jq 时测试自身 SKIP）
 bash tests/test-allow-tools.sh || fail=1
 
+# 版本核对脚本回归（config plugin_version 与插件版本核对）
+bash tests/test-version-check.sh || fail=1
+
 [ "$fail" -eq 0 ] && echo "OK：插件结构校验通过"
 exit "$fail"

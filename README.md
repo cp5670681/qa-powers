@@ -29,6 +29,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 - **免环境变量**：凭据（账号密码、DB 连接串、JMS 身份）在 init 时直接明文存入 `.qa-powers/config.yaml`，无需维护 shell 环境变量；init 自动把 config 与登录态文件加入被测项目 `.gitignore`，防止误提交
 - **四态状态机**：passed / failed / blocked / skipped，环境故障不算用例失败
 - **首跑探索录制、二次起自动回放**：每条用例首次执行时把解析出的语义 locator 命令沉淀到 `cases/<模块>/<case-id>.replay.sh`；再次执行自动走回放模式直跑命令链，不再逐动作 snapshot 探索，断言/证据/造数不变。selector 失效自动单步降级探索并修脚本；删脚本即强制重新探索
+- **config 记录插件版本**：`init` 把插件版本写入 `.qa-powers/config.yaml` 的 `plugin_version`，之后 design/run/report/k8s 会核对——若与当前插件 major.minor 不同（大/小版本升级）提醒重跑 `init` 更新 config，仅 patch 差异不影响、不提醒
 
 ## 安装
 
@@ -66,7 +67,7 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 ```
 skills/          4 个测试工作流 skill + 1 个远程运维 skill + 1 个入口路由
 hooks/           SessionStart 提示 hook；PreToolUse hook 自动放行 playwright-cli 命令与 usql 只读查询
-scripts/         validate.sh 插件结构自检；allow-tools.sh 权限放行 hook 脚本
+scripts/         validate.sh 插件结构自检；allow-tools.sh 权限放行 hook 脚本；version-check.sh config 版本核对
 tests/           开发用：test-allow-tools.sh——hook 放行回归测试；demo/ 冒烟夹具（见 CONTRIBUTING.md）
 ```
 

@@ -8,7 +8,7 @@ allowed-tools: Bash(ssh:*), Bash(cat:*), Read, AskUserQuestion
 
 ## 0. 准备
 
-1. 读 `.qa-powers/config.yaml` 的 `envs.test.k8s` 段（双环境结构：k8s 只在 test 环境）；不存在 → 引导用户运行 `qa-powers:init`
+1. 读 `.qa-powers/config.yaml` 的 `envs.test.k8s` 段（双环境结构：k8s 只在 test 环境）；不存在 → 引导用户运行 `qa-powers:init`。**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）
 2. 拼装 JMS 通道串（个人身份从 config `envs.test.k8s.jms.user` 明文读）：
 
 ```bash

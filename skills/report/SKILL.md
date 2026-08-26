@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Bash(ls:*), AskUserQuestion
 
 ## 1. 选 run
 
-`ls .qa-powers/evidence/` 列出可选 run-id；用户没指定就用最新的一个。
+`ls .qa-powers/evidence/` 列出可选 run-id；用户没指定就用最新的一个。**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）。
 
 ## 2. 读取（只读 result.yaml，不解析日志/截图）
 

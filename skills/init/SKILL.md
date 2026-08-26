@@ -79,6 +79,7 @@ mkdir -p .qa-powers/cases .qa-powers/evidence .qa-powers/reports
 ## 4. 写 .qa-powers/config.yaml（用收集到的值；已有 config 时按第 0 节增量合并，只动本次收集的段）
 
 ```yaml
+plugin_version: <从 $CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json 读（jq -r '.version' 或 awk）；仅本插件安装后 config 与流程核对版本用，不参与任何流程逻辑>
 browser:                 # 两环境共享
   channel: chrome        # chrome | msedge | chromium
   headed: true           # 有头模式
@@ -128,7 +129,7 @@ envs:
           runner: <脚本执行器>        # 任意命令（rails: bin/rails runner、node: node、python: python）；应用无脚本执行能力才删除此行
 ```
 
-注意：config **明文**存凭据（免去维护环境变量），必须已被 `.gitignore` 覆盖（见第 3 步）。登录态文件按 `auth-<env>-<account>.json` 分文件。老 config 缺 `repos.backend.type`：design/run 从已配的 runner 命令推断（含 rails→rails、node→node、python→python），推断不出按 other 处理，也可重跑 init 增量补上。
+注意：config **明文**存凭据（免去维护环境变量），必须已被 `.gitignore` 覆盖（见第 3 步）。登录态文件按 `auth-<env>-<account>.json` 分文件。老 config 缺 `repos.backend.type`：design/run 从已配的 runner 命令推断（含 rails→rails、node→node、python→python），推断不出按 other 处理，也可重跑 init 增量补上。`plugin_version` 记录写文件时插件的版本（从 `$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json` 读）；后续各流程（design/run/report/k8s）会核对它——若与当前插件 major.minor 不同（大/小版本升级）会提醒重跑 init，仅 patch 差异不提醒，因此**每次 init（含第 0 节增量合并）都把 `plugin_version` 更新为当前插件版本**。
 
 ## 5. 沉淀登录态（免登录跳过；对 config 已配账号逐个做——init 后即主账号；design 后续追加的权限账号由 run 首次用到时自动登录沉淀，无需手工）
 

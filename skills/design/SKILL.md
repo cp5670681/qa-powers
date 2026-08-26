@@ -20,7 +20,7 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ss
 
 ## 2. 代码影响分析（强制步骤，不可跳过）
 
-读 `.qa-powers/config.yaml` 的 repos 段。**先问特性分支，不依赖 checkout**：AskUserQuestion 逐个仓库问「本次需求测哪个分支的改动？」，选项给「当前 checkout 分支（`<branch --show-current>` 的值）」并说明可直接输入分支名（如 `feature/ord-1234`）；前后端分支通常同名，先问前端再问后端是否同分支。
+读 `.qa-powers/config.yaml` 的 repos 段。**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）。**先问特性分支，不依赖 checkout**：AskUserQuestion 逐个仓库问「本次需求测哪个分支的改动？」，选项给「当前 checkout 分支（`<branch --show-current>` 的值）」并说明可直接输入分支名（如 `feature/ord-1234`）；前后端分支通常同名，先问前端再问后端是否同分支。
 
 对每个仓库，用用户指定的分支引用做只读 diff（**绝不 checkout**）：
 
