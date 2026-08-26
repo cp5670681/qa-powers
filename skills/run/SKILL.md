@@ -52,10 +52,10 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 规则：
 
+- **只读直接跑、写数据必须确认（任何环境都适用）**：纯查询——usql 单条 `SELECT/SHOW/DESC/DESCRIBE/PRAGMA(查询型)/EXPLAIN(不含 ANALYZE)`，或脚本/runner 内只有只读逻辑（查询/puts）——直接执行，**不需 AskUserQuestion**；usql 只读内联查询已由 PreToolUse hook 自动放行、免确认。一旦涉及写（`INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT`、`PRAGMA name=值`、`EXPLAIN ANALYZE`、或脚本含写入逻辑/副作用），执行前必须 AskUserQuestion 确认（test/k8s 环境同 k8s skill：动哪些表/数据、量级、是否可回滚）
 - 未配 script 段 / 无后端仓库 → 只允许 `.sql`（usql）；执行中遇到脚本文件停下，提示配置 runner 或改用 `.sql`
 - **多库**：`envs.<ENV>.db` 配了 `dbs: { 别名: { url, desc } }` 时，usql 目标库按 case frontmatter `dbs:` 声明的别名取 `dbs.<别名>.url`；用哪个库先看该别名的 `desc` 说明。用例 SQL 引用了别名而未声明 → 停下问用户或用 `db.url` 默认库
 - local 环境：runner 与 workdir（= repos.backend.path）取 config，**禁止猜**；runner 启动慢**不等于卡死**，不要提前杀掉重试
-- k8s（test）跑**写数据**脚本（INSERT/UPDATE/DELETE）前先 AskUserQuestion 确认（同 k8s skill 规则）；纯只读直接跑
 - local 首次执行 runner 命令会被权限拦截 → 授权放行（或把 `Bash(cd:*<runner>:*)` 写入 settings 白名单）
 
 ## 1. 逐条 case 执行（顺序模式）

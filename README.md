@@ -65,16 +65,16 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 ```
 skills/          4 个测试工作流 skill + 1 个远程运维 skill + 1 个入口路由
-hooks/           SessionStart 提示 hook；PreToolUse hook 自动放行 playwright-cli 命令
-scripts/         validate.sh 插件结构自检；allow-playwright-cli.sh 权限放行 hook 脚本
-tests/           开发用：test-allow-playwright-cli.sh——hook 放行回归测试；demo/ 冒烟夹具（见 CONTRIBUTING.md）
+hooks/           SessionStart 提示 hook；PreToolUse hook 自动放行 playwright-cli 命令与 usql 只读查询
+scripts/         validate.sh 插件结构自检；allow-tools.sh 权限放行 hook 脚本
+tests/           开发用：test-allow-tools.sh——hook 放行回归测试；demo/ 冒烟夹具（见 CONTRIBUTING.md）
 ```
 
 ## 安全声明
 
 - 凭据明文存于 `.qa-powers/config.yaml`（明换便利，属用户选择）；init 自动写入被测项目 `.gitignore`（覆盖 `config.yaml` 与 `auth-*.json`），请勿移出忽略名单
 - 插件绝不 checkout / 修改被测仓库，只读分析
-- 插件自带 PreToolUse hook：`playwright-cli` 命令（含纯 playwright-cli 组成的复合命令）自动放行、免权限确认；其余命令不受影响。仅放行浏览器自动化操作，usql / ssh / 脚本执行等仍走正常确认；机器无 jq 时自动退回默认确认流程
+- 插件自带 PreToolUse hook：`playwright-cli` 命令（含纯 playwright-cli 组成的复合命令）与 **usql 只读内联查询**（单条 `SELECT/SHOW/DESC/PRAGMA(查询型)/EXPLAIN(不含 ANALYZE)`，`-c` 带引号、无 `-f` 脚本文件、无写关键字/多语句/WITH/INTO/EXPLAIN ANALYZE）自动放行、免权限确认；其余命令（写库、usql `-f` 脚本、ssh、脚本执行等）仍走正常确认。机器无 jq 时自动退回默认确认流程
 - 浏览器由 playwright-cli 管理，登录态文件 `.qa-powers/auth-*.json` 含会话 cookie，同样在忽略名单内
 
 ## 开发与贡献

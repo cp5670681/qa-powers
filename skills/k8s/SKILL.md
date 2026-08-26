@@ -16,7 +16,7 @@ JMS="<envs.test.k8s.jms.user>@<envs.test.k8s.nodes 里目标节点的IP>@<envs.t
 ```
 
 3. config `envs.test.k8s.jms.user` 为空 → 停下，提示重跑 `qa-powers:init` 补上，值形如 `alice@root`
-4. 涉及删除/修改类操作（k8sdel、k8sedit、删 pod、改线上资源）**以及会写数据的脚本**（数据修复/迁移/删除），必须先 AskUserQuestion 确认（提问与选项一律用中文）
+4. 涉及删除/修改类操作（k8sdel、k8sedit、删 pod、改线上资源）**以及会写数据的脚本**（数据修复/迁移/删除），必须先 AskUserQuestion 确认（提问与选项一律用中文）；**纯查询/只读脚本直接跑，不需确认**（如查日志、`select`/只读 `puts`、k8slist/k8slog）
 
 > 本 skill 是 test 环境的运维入口；跑**数据脚本**（造数/清理/验证）的默认应用是 `envs.test.script.app`（`envs.test.k8s.apps` 的某个键），下文 `<app>` 未指明时用它。
 
@@ -71,7 +71,7 @@ ssh -p <port> "$JMS" "kubectl exec -n <ns> $POD -c <container> -- <runner> -e 'p
 
 - `<runner>`（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）与 `<workdir>`（如 `/var/www/research`）一律取 config，**禁止猜**（`/app`、`/srv` 都不对；PATH 里通常没有全局 runner）；`workdir` 为空说明 pod 工作目录已是应用目录，模板省略 `cd <workdir>` 段
 - runner 启动慢**不等于卡死**（Rails runner 约 1 分钟，其他类型一般更快），不要提前杀掉重试
-- 脚本含**写操作**（INSERT/UPDATE/DELETE、改文件）→ 执行前把要点给用户确认：动哪些表/数据、量级、是否可回滚；纯只读脚本（select/puts）直接跑
+- 脚本含**写操作**（INSERT/UPDATE/DELETE、改文件）→ 执行前把要点给用户确认：动哪些表/数据、量级、是否可回滚；**纯只读脚本（select/puts 等查询）直接跑，不需确认**
 
 ## 4. 交互式（给用户自己跑，命令前加 `! `）
 

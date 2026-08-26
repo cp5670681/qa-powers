@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# scripts/allow-playwright-cli.sh 的表驱动回归测试。
+# scripts/allow-tools.sh 的表驱动回归测试。
 # 这是权限放行脚本，注入向量会演化——新增绕过手法时先把向量加进 skip 组再修脚本。
-# 用法：bash tests/test-allow-playwright-cli.sh（依赖 jq；缺 jq 时脚本本身降级，本测试跳过）
+# 用法：bash tests/test-allow-tools.sh（依赖 jq；缺 jq 时脚本本身降级，本测试跳过）
 set -u
 cd "$(dirname "$0")/.."
 
@@ -13,7 +13,7 @@ fail=0
 check() { # check <allow|skip> <命令字符串>
   local expect=$1 cmd=$2 out verdict
   out=$(printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$cmd" | jq -Rs .)" \
-        | bash scripts/allow-playwright-cli.sh)
+        | bash scripts/allow-tools.sh)
   if [ "$expect" = allow ]; then
     [[ "$out" == *'"permissionDecision":"allow"'* ]] && verdict=ok || verdict=bad
   else
@@ -38,11 +38,37 @@ check allow 'A=1 playwright-cli a && B=2 playwright-cli b'
 
 # ---- 不放行：混合命令 / 其他工具 ----
 check skip 'cd /repo && playwright-cli goto http://x'
-check skip 'usql "sqlite:///x" -f s.sql'
 check skip 'playwright-cli requests | grep POST'
 check skip 'playwright-cli a; rm -rf /tmp/x'
 check skip 'playwright-cli close && echo done'
 check skip 'bash scripts/other.sh'
+
+# ---- 应放行：只读 usql 内联查询（查询不改数据）----
+check allow 'usql "sqlite:///x.db" -c "SELECT * FROM orders WHERE id=1"'
+check allow 'usql "sqlite:///x" -c "select count(*) from t"'
+check allow 'usql "sqlite:///x" -c "SHOW TABLES"'
+check allow 'usql "sqlite:///x" -c "PRAGMA table_info(orders)"'
+check allow 'usql "sqlite:///x" -c "EXPLAIN SELECT 1"'
+check allow 'usql "sqlite:///x" -c "SELECT 1;"'
+check allow "usql \"sqlite:///x\" -c 'SELECT id FROM users WHERE city = '\''Paris'\'''"
+
+# ---- 不放行：usql 写库 / 脚本文件 / 无法静态判定的查询 ----
+check skip 'usql "sqlite:///x" -f s.sql'
+check skip 'usql "sqlite:///x" -c "DELETE FROM orders WHERE id=1"'
+check skip 'usql "sqlite:///x" -c "INSERT INTO orders VALUES (1)"'
+check skip 'usql "sqlite:///x" -c "UPDATE orders SET a=1 WHERE id=2"'
+check skip 'usql "sqlite:///x" -c "DROP TABLE orders"'
+check skip 'usql "sqlite:///x" -c "CREATE TABLE t (id int)"'
+check skip 'usql "sqlite:///x" -c "SELECT * FROM a; DELETE FROM b"'
+check skip 'usql "sqlite:///x" -c "WITH del AS (DELETE FROM t RETURNING *) SELECT * FROM del"'
+check skip 'usql "sqlite:///x" -c "SELECT * INTO newt FROM t"'
+check skip 'usql "sqlite:///x" -c "TRUNCATE TABLE t"'
+check skip 'usql "sqlite:///x" -c "GRANT ALL ON t TO x"'
+check skip 'usql "sqlite:///x" -c "EXPLAIN ANALYZE DELETE FROM orders"'
+check skip 'usql "sqlite:///x" -c "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM t"'
+check skip 'usql "sqlite:///x" -c "PRAGMA writable_schema=ON"'
+check skip 'usql "sqlite:///x" -c "SELECT 1" && rm -rf /tmp/x'
+check skip 'usql "sqlite:///x" -c "SELECT 1" | tee /tmp/out.txt'
 
 # ---- 不放行：注入向量（安全边界，最高优先级防回归）----
 check skip 'playwright-cli a & rm -rf /'                     # & 后台执行
@@ -59,17 +85,17 @@ check skip 'playwright-cli eval "click(); submit()"'
 check skip 'playwright-cli fill "a|b" "a>b"'
 
 # ---- 降级路径：畸形输入 / 空命令（应无输出且退出码 0）----
-if out=$(echo 'not-json' | bash scripts/allow-playwright-cli.sh) && [ -z "$out" ]; then
+if out=$(echo 'not-json' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
   pass=$((pass + 1))
 else
   fail=$((fail + 1)); echo "FAIL 畸形 JSON 应静默退出，实际: $out"
 fi
-if out=$(echo '{"tool_input":{}}' | bash scripts/allow-playwright-cli.sh) && [ -z "$out" ]; then
+if out=$(echo '{"tool_input":{}}' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
   pass=$((pass + 1))
 else
   fail=$((fail + 1)); echo "FAIL 空命令应静默退出，实际: $out"
 fi
-if out=$(printf '{"tool_input":{"command":"playwright-cli a\nrm -rf /"}}' | bash scripts/allow-playwright-cli.sh) && [ -z "$out" ]; then
+if out=$(printf '{"tool_input":{"command":"playwright-cli a\nrm -rf /"}}' | bash scripts/allow-tools.sh) && [ -z "$out" ]; then
   pass=$((pass + 1))
 else
   fail=$((fail + 1)); echo "FAIL 换行夹带命令应不放行，实际: $out"
