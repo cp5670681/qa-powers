@@ -52,21 +52,6 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 ## 快速开始
 
-### 方式一：5 分钟体验（内置 demo）
-
-```bash
-node tests/demo/server.js    # 启动被测 demo：http://localhost:8899
-```
-
-在 `tests/demo/` 目录下开一个新 Claude Code 会话，依次：
-
-1. `/qa-powers:init` —— 环境多选只勾 **local**，base_url 填 `http://localhost:8899`，免登录，DB 用 `sqlite://<绝对路径>/demo-db.sqlite`，无后端仓库跳过脚本后端
-2. `/qa-powers:design` —— 需求："用户可以把购物车里的测试商品A下单，数量可填；库存要正确扣减"
-3. `/qa-powers:run`
-4. `/qa-powers:report`
-
-### 方式二：接入你的项目
-
 在**被测项目根目录**开 Claude Code 会话：
 
 1. `/qa-powers:init` —— 收集被测地址、登录方式、前后端仓库路径、DB 连接（凭据明文存入 config，之后无需设置环境变量），沉淀登录态
@@ -82,7 +67,7 @@ node tests/demo/server.js    # 启动被测 demo：http://localhost:8899
 skills/          4 个测试工作流 skill + 1 个远程运维 skill + 1 个入口路由
 hooks/           SessionStart 提示 hook；PreToolUse hook 自动放行 playwright-cli 命令
 scripts/         validate.sh 插件结构自检；allow-playwright-cli.sh 权限放行 hook 脚本
-tests/           test-allow-playwright-cli.sh——hook 放行回归测试；demo/ 本地冒烟用被测项目（Node + sqlite3，无其他依赖）
+tests/           开发用：test-allow-playwright-cli.sh——hook 放行回归测试；demo/ 冒烟夹具（见 CONTRIBUTING.md）
 ```
 
 ## 安全声明
