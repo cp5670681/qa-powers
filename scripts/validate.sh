@@ -46,5 +46,8 @@ for skill in skills/*/SKILL.md; do
   echo "$fm" | grep -q '^description:' || { echo "缺少 description 字段：$skill"; fail=1; }
 done
 
+# hook 放行回归（权限放行脚本，注入向量防回归；无 jq 时测试自身 SKIP）
+bash tests/test-allow-playwright-cli.sh || fail=1
+
 [ "$fail" -eq 0 ] && echo "OK：插件结构校验通过"
 exit "$fail"
