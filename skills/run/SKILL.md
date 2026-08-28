@@ -20,7 +20,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 > 路径口径：本 skill 全文的 `cases/`、`evidence/` 均指被测项目根下的 `.qa-powers/cases/`、`.qa-powers/evidence/`；凡写「绝对路径」处一律为 `$PWD/.qa-powers/evidence/...`（用 `pwd` 取被测项目根拼接）。
 
 1. 读 `.qa-powers/config.yaml`；**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）
-2. **选环境（硬性步骤）**：读 `active_env`，AskUserQuestion 确认本次跑哪个 `envs` 键（local/test）或切到另一个；config 只配了一个环境时直接用它，不再问。确定 `ENV` 后，下文所有 base_url / 登录态 / DB URL / 脚本后端一律从 `envs.<ENV>` 取。记入 commands.log 与 run 级 result.yaml（`env: <ENV>`）
+2. **选环境（硬性步骤）**：读 `active_env`，AskUserQuestion 确认本次跑哪个 `envs` 键（local/test）或切到另一个；config 只配了一个环境时直接用它，不再问。确定 `ENV` 后，下文所有 base_url / 登录态 / DB URL / 脚本后端一律从 `envs.<ENV>` 取；顶层 `notes`（全环境共享）与 `envs.<ENV>.notes`（环境专属，冲突时以环境专属为准）有值时逐条读出，作为本次执行的注意事项全程遵守（登录/造数/断言/清理/页面操作先过一遍 notes）。记入 commands.log 与 run 级 result.yaml（`env: <ENV>`）
 3. `run_id=$(date +%Y-%m-%d-%H%M%S)`；`mkdir -p .qa-powers/evidence/$run_id`。**断点续跑**：若最新 run（evidence 目录名按 `YYYY-MM-DD-HHMMSS` 字典序取最大，即最新）下存在未完成 case（case 目录无 result.yaml），先问用户「继续该 run（复用其 run_id 与 evidence 目录，跳过已有终态 result.yaml 的 case，从第一个未完成的接着跑）还是新开 run」
 4. **建立路由映射**：
    - 先查 `cases/<模块>/meta.yaml` 是否已沉淀 `routes:`（「页面名 → 完整 URL」映射，见下）→ 有则直接复用，不再推导
@@ -63,6 +63,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 对每条 case，在其证据目录 `evidence/$run_id/<case-id>/` 下工作（先 mkdir，并建 screenshots/）。断点续跑时，case 目录已有终态 result.yaml 的直接跳过，在 commands.log 注明 resumed-skip。
 
 **多账号切换**：case frontmatter 声明了 `account:` 且与当前已加载账号不同时，先切换：`playwright-cli state-load <envs.<ENV>.auth.accounts.<该账号>.state_file>` → `playwright-cli goto <envs.<ENV>.base_url>` → snapshot 确认登录身份已切换（页面上能看到当前用户标识时核对）。state_file 不存在或加载后未登录 → **自动登录**（先 snapshot 识别登录页类型）：
+- **环境注意事项优先**：顶层 `notes` 与 `envs.<ENV>.notes` 中与登录相关的条目（如"令牌输入框留空不填"）按其执行，优先于下面的通用识别规则
 - **普通登录页**：定位登录入口 → 用 config 该账号的 username/password fill 提交
 - **SSO 登录页**（识别：URL 跳转到独立认证域名——URL 含 auth/oauth/sso 且非业务域名，页面是统一认证入口）：填 username/password 提交；页面出现额外多因子字段（令牌/验证码等）且非必填（有「忘记/暂不」类跳过入口）时留空跳过；登录成功按 redirect/return_to 参数自动回跳业务页。具体域名与页面文案以实际系统为准，勿套用固定文案
 - 登录成功后 `state-save <该账号 state_file>` 沉淀 → 回到目标页继续（fill 密码的命令记入 commands.log 时密码值脱敏为 `***`）。自动登录仍失败 → 该 case 标 blocked（reason 注明账号与原因）。切换/登录动作记入 commands.log。
@@ -194,7 +195,7 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 ### b. 派发循环
 
 - **账号预沉淀（派发前）**：汇总入选 case 声明的全部 `account`，state_file 缺失或未登录的，先在主会话按 §1 多账号切换的自动登录流程逐个沉淀——并发执行中禁止 state-save，必须提前备好
-- **生成共享上下文（派发前）**：写 `.qa-powers/evidence/<run-id>/context.md`，含 ENV（base_url、登录态文件路径、浏览器 channel/headless）、DB DSN 列表（按各 case frontmatter `dbs:` 声明从 `envs.<ENV>.db` 取，含多库别名及 desc）、路由映射、会话隔离约定（`-s=qap-<case-id>`）、执行协议（§1b/c/d）。subagent prompt 只需引用该文件 + case 全文/测试数据，不再逐条重复环境信息（减少写错与冗长）
+- **生成共享上下文（派发前）**：写 `.qa-powers/evidence/<run-id>/context.md`，含 ENV（base_url、登录态文件路径、浏览器 channel/headless、顶层 notes 与 `envs.<ENV>.notes` 注意点逐条）、DB DSN 列表（按各 case frontmatter `dbs:` 声明从 `envs.<ENV>.db` 取，含多库别名及 desc）、路由映射、会话隔离约定（`-s=qap-<case-id>`）、执行协议（§1b/c/d）。subagent prompt 只需引用该文件 + case 全文/测试数据，不再逐条重复环境信息（减少写错与冗长）
 - **滚动派发（保持 N 并发，不等整批）**——参考 p-queue / worker pool 的并发队列语义，任务完成事件触发补位：
    - **机制（关键）**：subagent 一律用 `run_in_background: true` 派发（Agent 工具后台运行），完成后自动收到 task-notification，主会话**不被阻塞**。这是滚动与「分批等整批」的分水岭——阻塞式 Agent 调用一次派 N 个后必须等全部返回，快的会空等慢的（实测 case-01 20 分钟期间，仅 6 分钟的第二批 case 完全没开始）。宿主 Agent 工具不支持 `run_in_background` 时退回阻塞式派发、按批等整批（机制降级，不改变正确性）
   - **初始派发**：一次派发 `min(N, 待跑 case 数)` 个（同一响应内多个 Agent 调用 = 并行）

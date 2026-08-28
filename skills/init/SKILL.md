@@ -18,7 +18,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 
 1. 读出现有配置，列给用户看（注意脱敏，只显示结构不显示值）
 2. **旧结构无法增量** → 说明需重跑 init 重新收集，先确认没有需要保留的手工改动再覆盖：① env/base_url/db/k8s 在顶层、无 `envs` 段；② 凭据字段是 `*_env` 环境变量名写法（现已改为明文直存）
-3. AskUserQuestion 确认本次要补哪些**缺失的段**（如 test 环境、k8s；`repos.backend.type` 缺失时也按第 1 节探测补上）；已有段一律不再收集、不改动
+3. AskUserQuestion 确认本次要补哪些**缺失的段**（如 test 环境、k8s、notes——顶层与各环境 `notes` 键缺失都算缺失段，可增量补，不算改动已有段；`repos.backend.type` 缺失时也按第 1 节探测补上）；已有段一律不再收集、不改动
 4. 只执行与缺失段相关的收集与校验；第 4 步写文件时**合并写入**——保留全部已有内容，仅追加/更新本次收集的段，禁止整份重写
 5. 目录骨架（第 3 步）`mkdir -p` 幂等，照常执行
 
@@ -31,6 +31,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 - 前端仓库绝对路径 + 基线分支（**探测默认分支**，main/master 自动识别：`git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` 输出 `origin/main` 则取 `main`；探测不出（无 remote HEAD 引用）或用户想用非默认基线（如 develop）→ AskUserQuestion 问）
 - 后端仓库绝对路径 + 基线分支（同上探测）；无后端可跳过
 - **后端项目类型（配了后端仓库才收）**：先探测后端仓库根目录——`Gemfile` → rails、`package.json` → node、`pyproject.toml`/`requirements.txt`/`manage.py` → python；都不是或不确定 → AskUserQuestion 从 rails/node/python/other 里选。类型写入 `repos.backend.type`，后续各 skill 按它分派提示（runner 建议、schema 定义位置、密码可读的配置文件）
+- **系统特殊注意点（notes，可选，全环境共享）**：收完共享项后问一句"这套被测系统有没有所有环境都适用的注意点"（如：列表页时间统一显示 UTC 断言先换算、导出有全局限流）；用户逐条说出则写入顶层 `notes`（自由文本列表，两环境共享），与各环境专属 notes 并存、冲突时以环境专属为准；没有则不写该键
 
 **环境选择（共享项收完后、问 base_url 之前；AskUserQuestion 多选）**：要配置哪些环境？local / test。选中几个就配几个——都选则一次 init 配齐双环境，之后换环境由 `run` 开头选择，无需重新 init。未选中的直接跳过（`envs` 只写选中的）。
 
@@ -43,6 +44,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 - 权限类需求的多账号**不在 init 收集**：`qa-powers:design` 遇权限控制需求时查库发现账号、引导补密码，增量写入 config 的 `auth.accounts`
 - DB：**多库探测收集**——先读后端仓库数据库配置（按 `repos.backend.type`：rails 看 `config/database.yml` 各环境段、node 看 `.env`/prisma 的 `DATABASE_URL*`、python 看 settings/.env），列出代码里出现的所有库，逐个归纳用途说明（哪个是主业务库=默认库、哪个是已发布/只读库、哪个是日志/分析库）。默认库写 `db.url`，其余库用语义别名写 `db.dbs`（`{ url, desc }`，desc 写明"哪些情况用这个库"）。代码里只有单库或读不到 → 只收 `db.url`；无 DB 可跳过。密码含特殊字符需 URL 编码（同 test 环境）
 - 脚本执行后端：本地 runner（任意命令，在本地后端仓库目录内执行；rails 用 `bin/rails runner`、node 用 `node`、python 用 `python`）；无后端仓库则跳过
+- **环境特殊注意点（notes，可选）**：收完上述各项后问一句"这个环境测试执行时有没有要特别注意的点"（常见如：登录页令牌/多因子字段留空不填、某个库是只读从库禁止写入、列表页数据量大需先加筛选）；用户逐条说出则原样写入该环境 `notes`（自由文本列表，条目含英文冒号+空格时整体加引号，防止 YAML 解析成 map）；没有则不写该键
 
 **test 环境（base_url=测试环境地址）**：
 
@@ -54,6 +56,7 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
   - 节点表（节点名 → 资产 IP）+ 默认节点：多节点时逐个收；单节点可只写一条。**用途**：k8s 操作时拼完整通道串 `user@节点IP@host`、换节点时按表取 IP——不是摆设，别写占位值
   - 应用列表，每个应用收：namespace、容器名、pod 名匹配正则（主 pod 全名长度固定，按长度锚定以排除衍生 pod，如 `^research.{,17}$`）、应用目录（pod 工作目录已是应用目录时留空）、脚本执行器（任意命令，Rails 用 `bin/rails runner`，非 Rails 用 node/python 等）
   - **script.app**：跑数据脚本（造数/清理/验证）归属的应用，取上面 apps 的某个键
+- 环境特殊注意点（notes，可选）：收集方式同 local
 
 ## 2. 依赖校验（逐项执行，失败给出修复指引）
 
@@ -86,10 +89,14 @@ browser:                 # 两环境共享
 repos:                   # 共享：本地 checkout
   frontend: { path: <收集值>, base: <探测的默认分支> }   # base 用第 1 节探测出的默认分支（main/master）
   backend:  { path: <收集值>, base: <探测的默认分支>, type: rails }   # 无后端则删除此行；type=rails|node|python|other（第 1 节探测写入）
+notes:                   # 可选：全环境共享的系统注意点（第 1 节问出才写，逐条自由文本；没有则删除此段）
+  - <如：所有列表页时间显示为 UTC，断言前先换算>
 active_env: local        # 所选环境中的第一个（只选 test 时为 test）；run 开头可切换
 envs:
   local:
     base_url: <收集值>
+    notes:                             # 可选：环境专属注意点（第 1 节问出才写，逐条自由文本；与顶层 notes 并存；没有则删除此段）
+      - <如：登录页令牌输入框留空不填，只用账号密码>
     auth:
       default: admin     # 不指定 account 的用例用哪个账号（init 只配这一个主账号）
       accounts:          # 结构固定：key=账号名；免登录可删除整个 auth 段
@@ -103,6 +110,8 @@ envs:
       runner: bin/rails runner   # 本地脚本执行器，任意命令（Node: node、Python: python、Rails: bin/rails runner）
   test:
     base_url: <收集值>
+    notes:                             # 可选：环境专属注意点，同 local；没有则删除此段
+      - <如：登录页令牌输入框留空不填，只用账号密码>
     auth:
       default: admin
       accounts:
@@ -136,7 +145,7 @@ envs:
 对每个环境的每个账号：
 
 1. `playwright-cli open <该环境 base_url> --browser <config的channel> --<headed时加 --headed>`
-2. `playwright-cli snapshot` 找到登录入口，引导完成登录（凭据从 config 该账号的 username/password 读，不在对话里回显密码）
+2. `playwright-cli snapshot` 找到登录入口，引导完成登录（凭据从 config 该账号的 username/password 读，不在对话里回显密码；顶层 `notes` 与该环境 `notes` 有登录相关注意点——如令牌留空——按 notes 执行）
 3. 登录成功后：`playwright-cli state-save <该账号的 state_file>`
 4. `playwright-cli close`（每个账号登录完关一次，避免会话串号）
 
