@@ -1,0 +1,3 @@
+interface:
+  display_name: "qa-powers report"
+  short_description: "Summarize a run into a Markdown report"

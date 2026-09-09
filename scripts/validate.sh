@@ -66,7 +66,21 @@ for skill in skills/*/SKILL.md; do
   fm=$(awk 'NR==1{next} /^---$/{exit} {print}' "$skill")
   echo "$fm" | grep -q '^name:' || { echo "缺少 name 字段：$skill"; fail=1; }
   echo "$fm" | grep -q '^description:' || { echo "缺少 description 字段：$skill"; fail=1; }
+  dir=$(dirname "$skill")
+  [ -f "$dir/agents/openai.yaml" ] || { echo "缺少 Codex sidecar：$dir/agents/openai.yaml"; fail=1; }
 done
+
+# plugin.json skills 数组（有 jq 时）必须覆盖每个 skills/*/ 且路径存在
+if command -v jq >/dev/null 2>&1; then
+  while IFS= read -r p; do
+    [ -f "${p#./}/SKILL.md" ] || { echo "plugin.json skills 路径不存在：$p"; fail=1; }
+  done < <(jq -r '.skills[]?' .claude-plugin/plugin.json)
+  for skill in skills/*/SKILL.md; do
+    rel="./$(dirname "$skill")"
+    jq -e --arg p "$rel" '.skills | index($p)' .claude-plugin/plugin.json >/dev/null \
+      || { echo "plugin.json skills 未列出：$rel"; fail=1; }
+  done
+fi
 
 # hook 放行回归（权限放行脚本，注入向量防回归；无 jq 时测试自身 SKIP）
 bash tests/test-allow-tools.sh || fail=1

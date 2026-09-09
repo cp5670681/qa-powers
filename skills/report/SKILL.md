@@ -6,9 +6,19 @@ allowed-tools: Read, Write, Bash(ls:*), Bash(bash:*), AskUserQuestion
 
 # report：生成测试报告
 
+## 宿主约定
+
+- 版本核对（两变量都空会拼成 `/scripts/...`，禁止无守卫直接展开）：
+
+```bash
+root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[ -n "$root" ] && [ -f "$root/scripts/version-check.sh" ] && bash "$root/scripts/version-check.sh" .qa-powers/config.yaml
+```
+- 向用户确认：有结构化提问工具则用之，没有则普通问答；一次一问，中文
+
 ## 1. 选 run
 
-`ls .qa-powers/evidence/` 列出可选 run-id；用户没指定就用最新的一个。**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）。
+`ls .qa-powers/evidence/` 列出可选 run-id；用户没指定就用最新的一个。**版本核对**：见宿主约定。
 
 ## 2. 读取（只读 result.yaml，不解析日志/截图）
 

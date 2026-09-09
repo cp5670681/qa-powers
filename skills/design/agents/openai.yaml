@@ -1,0 +1,3 @@
+interface:
+  display_name: "qa-powers design"
+  short_description: "Design UI test cases from a requirement"

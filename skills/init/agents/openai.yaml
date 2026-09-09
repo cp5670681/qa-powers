@@ -1,0 +1,3 @@
+interface:
+  display_name: "qa-powers init"
+  short_description: "Initialize local/test QA environments and auth"

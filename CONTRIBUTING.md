@@ -2,9 +2,11 @@
 
 ## 项目结构
 
-- `skills/<name>/SKILL.md` —— 每个 skill 一份提示词，YAML frontmatter（name/description/allowed-tools）+ 流程正文
-- `hooks/hooks.json` —— Claude Code hooks 配置
-- `.claude-plugin/` —— 插件与 marketplace 清单（版本号改动需两处同步；**不 bump 版本用户的 `/plugin update` 会被跳过**）
+- `skills/<name>/SKILL.md` —— 每个 skill 一份提示词，YAML frontmatter（name/description/allowed-tools）+ 流程正文；宿主无关，互相调用写 `Call the Skill tool with "<name>"`
+- `skills/<name>/agents/openai.yaml` —— Codex 等宿主的 picker 文案；与 Claude 同为 model-invoked
+- `hooks/hooks.json` —— Claude Code 专用 hooks
+- `.claude-plugin/` —— Claude 插件与 marketplace 清单（`skills` 数组列出全部 skill 目录；版本号与 marketplace 同步；**不 bump 版本用户的 `/plugin update` 会被跳过**）
+- `.agents/` —— 多宿主安装与 invocation 约定
 - `tests/demo/` —— 冒烟夹具，改动 skill 后用它跑一遍四段流程
 
 ## 改动流程
@@ -20,6 +22,8 @@
 - 硬约束与流程分开：违反即执行错误的规则放「硬约束」节
 - 用例/报告模板改动要保持向后兼容：老 evidence 的 result.yaml 结构不能破坏 report 解析
 - 严禁在文档与示例中放真实凭据、内网地址；示例一律用占位符（如 `<明文>`、`<连接串明文>`）
+- 新增 skill 必须：README 条目、`.claude-plugin/plugin.json` 的 `skills` 数组、`agents/openai.yaml`
+- 正文不写死 Claude slash / `claude mcp auth`；提问写成「向用户确认」，Claude 的 AskUserQuestion 仅作为可选工具名
 
 ## 安全红线
 

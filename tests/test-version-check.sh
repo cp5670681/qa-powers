@@ -67,7 +67,19 @@ else
   printf 'FAIL 期望静默 exit0（行内注释被并入版本串？）| status=%s out=%s\n' "$status" "$out"
 fi
 
-# ---- 非插件环境：CLAUDE_PLUGIN_ROOT 未设时从脚本自身目录读版本 ----
+# ---- QA_POWERS_ROOT 优先于 CLAUDE_PLUGIN_ROOT ----
+tmpq=$(mktemp -d)
+printf 'plugin_version: 0.0.1\n' > "$tmpq/c.yaml"
+out=$(QA_POWERS_ROOT="$PLUGIN_ROOT" CLAUDE_PLUGIN_ROOT=/nonexistent bash scripts/version-check.sh "$tmpq/c.yaml" 2>&1); status=$?
+if [ "$status" -eq 1 ] && echo "$out" | grep -q 'major.minor 不一致'; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  printf 'FAIL QA_POWERS_ROOT 应能读到插件版本 | status=%s out=%s\n' "$status" "$out"
+fi
+rm -rf "$tmpq"
+
+# ---- 非插件环境：CLAUDE_PLUGIN_ROOT / QA_POWERS_ROOT 未设时从脚本自身目录读版本 ----
 out=$(bash scripts/version-check.sh /tmp/opencode/nonexistent-config.yaml 2>&1); status=$?
 if [ "$status" -eq 0 ] && [ -z "$out" ]; then
   pass=$((pass + 1))

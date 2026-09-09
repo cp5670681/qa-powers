@@ -6,6 +6,18 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ss
 
 # design：需求 → 用例
 
+## 宿主约定
+
+- 版本核对（两变量都空会拼成 `/scripts/...`，禁止无守卫直接展开）：
+
+```bash
+root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[ -n "$root" ] && [ -f "$root/scripts/version-check.sh" ] && bash "$root/scripts/version-check.sh" .qa-powers/config.yaml
+```
+- 向用户确认：有结构化提问工具（AskUserQuestion 等）则用之，没有则普通问答；一次一问，中文
+- 调用其它 skill：`Call the Skill tool with "run"` 等；k8s 未安装则不要调用
+- MCP 拉需求失败时请用户粘贴正文；提示按当前宿主重新授权 MCP，不要写死 `claude mcp auth`
+
 ## 1. 读需求
 
 按用户给的形式获取需求内容：
@@ -14,13 +26,13 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash(git:*), Bash(usql:*), Bash(ss
 - Confluence 链接：用 WebFetch/MCP 拉取
 - 用户提供了本地用例文档：读取并规整为标准格式
 
-**拉取失败降级**：MCP 报错（认证失效/连接失败）或 WebFetch 被拦时，直接请用户把需求内容粘贴到对话里，不要卡在重试上；同时提示用户可用 `claude mcp auth <server>` 重新授权。
+**拉取失败降级**：MCP 报错（认证失效/连接失败）或 WebFetch 被拦时，直接请用户把需求内容粘贴到对话里，不要卡在重试上；同时提示按当前宿主重新授权 MCP。
 
 把需求拆成需求点 R1、R2、...（每条可独立验证）。
 
 ## 2. 代码影响分析（强制步骤，不可跳过）
 
-读 `.qa-powers/config.yaml` 的 repos 段。**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）。同时读顶层 `notes` 与各环境 `notes`（特殊注意点，如时间显示 UTC 断言先换算、大数据量列表先加筛选），写用例步骤与预期值时遵守。**先问特性分支，不依赖 checkout**：AskUserQuestion 逐个仓库问「本次需求测哪个分支的改动？」，选项给「当前 checkout 分支（`<branch --show-current>` 的值）」并说明可直接输入分支名（如 `feature/ord-1234`）；前后端分支通常同名，先问前端再问后端是否同分支。
+读 `.qa-powers/config.yaml` 的 repos 段。**版本核对**：见宿主约定。同时读顶层 `notes` 与各环境 `notes`（特殊注意点，如时间显示 UTC 断言先换算、大数据量列表先加筛选），写用例步骤与预期值时遵守。**先问特性分支，不依赖 checkout**：向用户确认，逐个仓库问「本次需求测哪个分支的改动？」，选项给「当前 checkout 分支（`<branch --show-current>` 的值）」并说明可直接输入分支名（如 `feature/ord-1234`）；前后端分支通常同名，先问前端再问后端是否同分支。
 
 对每个仓库，用用户指定的分支引用做只读 diff（**绝不 checkout**）：
 
@@ -54,7 +66,7 @@ changes:
 
 meta.yaml 写入用**增量更新**：只更新本次 design 产出的字段（requirements/base_branches/feature_branches/changes），**保留 run 已沉淀的 `routes:` 等其它字段**，禁止整份重写（否则会冲掉已推导的路由映射）。
 
-## 3. 交互式澄清（AskUserQuestion，一次一个问题；question、header、选项 label 与 description 一律用中文，技术名词可保留英文）
+## 3. 交互式澄清（一次一个问题；question、header、选项 label 与 description 一律用中文，技术名词可保留英文）
 
 对以下内容不明确时逐条问：业务规则、验收标准、边界情况（空值/极值/并发）、权限差异。每个问题给选项。用户答"差不多就行"时按行业常规约定并在用例里标注假设。
 
@@ -127,9 +139,9 @@ data: { setup: setup.sql, cleanup: cleanup.sql }  # 无 DB 需求则删除；也
 1. 汇总本次用例声明的全部 `account`，与所选环境 `envs.<env>.auth.accounts` 比对，列出缺失账号及其权限角色
 2. 引导用户逐个提供凭据（明文直接对话给即可）：查库发现的账号用户名已知、只收密码；用户提供的账号收用户名+密码
 3. **增量写入** config 对应环境的 `auth.accounts`：`账号名: { username, password, state_file: .qa-powers/auth-<env>-<账号名>.json }`——只追加新增键，不改已有内容。config 配了两个环境时问用户另一环境是否也要同名账号（用户名/密码可不同），需要则一并收集写入；不加则提醒：该环境跑这些用例会因账号缺失 blocked
-4. 登录态无需手工沉淀：`qa-powers:run` 首次用到该账号时自动登录并保存
+4. 登录态无需手工沉淀：run 首次用到该账号时自动登录并保存
 
-收尾提示：可运行 `qa-powers:run` 执行。
+收尾提示：可 Call the Skill tool with "run" 执行。
 
 ## 常见错误
 

@@ -6,6 +6,19 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 # run：guided-run 执行用例
 
+## 宿主约定
+
+- 版本核对（两变量都空会拼成 `/scripts/...`，禁止无守卫直接展开）：
+
+```bash
+root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[ -n "$root" ] && [ -f "$root/scripts/version-check.sh" ] && bash "$root/scripts/version-check.sh" .qa-powers/config.yaml
+```
+- 向用户确认：有结构化提问工具（AskUserQuestion 等）则用之，没有则普通问答；一次一问，中文
+- 调用 k8s：`Call the Skill tool with "k8s"`；该 skill 未安装则跳过，改提示本机日志
+- 并发：宿主 Agent 工具支持后台运行时滚动派发；不支持则退回阻塞式按批等待（不改变正确性）
+- 只读 usql 自动放行仅 Claude PreToolUse hook；其它宿主按 allowlist 或确认
+
 ## 硬约束（违反即执行错误）
 
 1. **业务意图固定，执行细节允许适配**：按 case 步骤执行；selector 可以修正（快照 ref 失效时按语义重新定位，如 getByRole 等价元素），但**禁止改变业务路径**（如绕过下单 UI 直接访问成功页）
@@ -13,21 +26,21 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 3. 密码/连接串从 config 明文读；commands.log 与对话输出不得回显密码明文
 4. **页面 URL 禁止猜测**：从 config `repos.frontend.path` 的路由代码推导（router 配置 / 页面组件的 route 定义），必要时前后端代码都可参考（如定位元素结构、确认接口行为），但只读，不修改
 5. **并发模式附加约束**：并发执行中禁止 `state-save`（多会话共读登录态文件，写会互相踩）；DB 写操作（造数/清理）只允许操作用例自身的独立数据（自己的 setup 造出的、带模块标记的记录），跨用例共享数据（同一行/同一库存/同一账号互斥状态）靠 `depends_on` 串行化——与 design 的依赖判定口径一致：无 `depends_on` = 各自独立数据、可并发；每个 subagent 只能操作自己的 `-s=qap-<case-id>` 会话
-6. **提问一律用中文**：所有 AskUserQuestion 的 question、header、选项 label 与 description 都用中文（base_url、DB、k8s、runner 等技术名词可保留英文）；向用户汇报结果也用中文
+6. **提问一律用中文**：向用户确认时 question、header、选项 label 与 description 都用中文（base_url、DB、k8s、runner 等技术名词可保留英文）；向用户汇报结果也用中文
 
 ## 0. 准备
 
 > 路径口径：本 skill 全文的 `cases/`、`evidence/` 均指被测项目根下的 `.qa-powers/cases/`、`.qa-powers/evidence/`；凡写「绝对路径」处一律为 `$PWD/.qa-powers/evidence/...`（用 `pwd` 取被测项目根拼接）。
 
-1. 读 `.qa-powers/config.yaml`；**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）
-2. **选环境（硬性步骤）**：读 `active_env`，AskUserQuestion 确认本次跑哪个 `envs` 键（local/test）或切到另一个；config 只配了一个环境时直接用它，不再问。确定 `ENV` 后，下文所有 base_url / 登录态 / DB URL / 脚本后端一律从 `envs.<ENV>` 取；顶层 `notes`（全环境共享）与 `envs.<ENV>.notes`（环境专属，冲突时以环境专属为准）有值时逐条读出，作为本次执行的注意事项全程遵守（登录/造数/断言/清理/页面操作先过一遍 notes）。记入 commands.log 与 run 级 result.yaml（`env: <ENV>`）
+1. 读 `.qa-powers/config.yaml`；**版本核对**：见宿主约定。有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）
+2. **选环境（硬性步骤）**：读 `active_env`，向用户确认本次跑哪个 `envs` 键（local/test）或切到另一个；config 只配了一个环境时直接用它，不再问。确定 `ENV` 后，下文所有 base_url / 登录态 / DB URL / 脚本后端一律从 `envs.<ENV>` 取；顶层 `notes`（全环境共享）与 `envs.<ENV>.notes`（环境专属，冲突时以环境专属为准）有值时逐条读出，作为本次执行的注意事项全程遵守（登录/造数/断言/清理/页面操作先过一遍 notes）。记入 commands.log 与 run 级 result.yaml（`env: <ENV>`）
 3. `run_id=$(date +%Y-%m-%d-%H%M%S)`；`mkdir -p .qa-powers/evidence/$run_id`。**断点续跑**：若最新 run（evidence 目录名按 `YYYY-MM-DD-HHMMSS` 字典序取最大，即最新）下存在未完成 case（case 目录无 result.yaml），先问用户「继续该 run（复用其 run_id 与 evidence 目录，跳过已有终态 result.yaml 的 case，从第一个未完成的接着跑）还是新开 run」
 4. **建立路由映射**：
    - 先查 `cases/<模块>/meta.yaml` 是否已沉淀 `routes:`（「页面名 → 完整 URL」映射，见下）→ 有则直接复用，不再推导
    - 无则用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义推导。**先确认 router mode**（`src/router/index.js` 的 `mode:` 字段）：`hash` 模式下完整 URL 带 `#/` 前缀（如 `http://host/#/works/...`），history 模式不带——拼错 `#/` 会 404。相对 path（如 `total_package_progress_remark_statistics`）要结合父路由前缀（如 `/works`）拼成完整路径
    - 推导成功后把「页面名 → 完整 URL」回写 `meta.yaml` 的 `routes:` 段，供本次 run 及下次复用（路由改动时更新）
    - 用例步骤涉及导航（goto）时一律使用该映射；映射中找不到时先查前端代码确认，仍不确定才问用户，**禁止凭记忆或猜测拼 URL**
-5. **执行模式选择（AskUserQuestion）**：
+5. **执行模式选择（向用户确认）**：
    - 顺序 / 并发。并发时再问并发上限（默认 3，可选 2/3/4——每个 worker 是一个独立浏览器实例）
    - **有头 / 无头（两种模式都问）**：默认值取 config `browser.headed`（init 沉淀的偏好；字段缺失时默认无头——证据靠截图/快照，无头更快更稳、多开不抢资源）；有头用于演示或排查单条 case 时选。**有头 + 并发提示**：每个 worker 是有头浏览器窗口（3 worker = 3 窗口抢资源），有头并发建议把上限降到 2
    - 选择记入 commands.log 与 run 级 result.yaml（`mode: sequential|parallel`、`headed: true|false`、`workers: N`）
@@ -36,7 +49,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 8. 用户指定跑哪些 case（默认 cases/ 下全部，按 priority 降序）
 9. **分支核对（仅 local；test 跑 pod 内代码，跳过）**：本地脚本/浏览器对着工作区执行，前后端仓库都须在特性分支上。对本次要执行的每个模块，读 `cases/<模块>/meta.yaml` 的 `feature_branches`，逐仓库核对 `git -C <path> branch --show-current`：
    - 当前分支 ≠ 特性分支 → 停下提示，请**用户自己切**（`! git -C <path> switch <特性分支>`；本地没有先 `git fetch` 再 `git switch --track origin/<特性分支>`），**AI 绝不 checkout**。用户坚持用当前分支 → 放行并在 commands.log 注明「分支不符：current vs feature」。提醒用户切分支前本地改动需已提交或 stash
-   - meta 无 `feature_branches`（旧用例）→ AskUserQuestion 问本次特性分支，或用户确认跳过核对
+   - meta 无 `feature_branches`（旧用例）→ 向用户确认本次特性分支，或用户确认跳过核对
 
 ## 0.5 脚本执行路由（造数/清理/DB 断言共用）
 
@@ -52,7 +65,7 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(ssh:*), Bash(cat:*), B
 
 规则：
 
-- **只读直接跑、写数据必须确认（任何环境都适用）**：纯查询——usql 单条 `SELECT/SHOW/DESC/DESCRIBE/PRAGMA(查询型)/EXPLAIN(不含 ANALYZE)`，或脚本/runner 内只有只读逻辑（查询/puts）——直接执行，**不需 AskUserQuestion**；usql 只读内联查询已由 PreToolUse hook 自动放行、免确认。一旦涉及写（`INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT`、`PRAGMA name=值`、`EXPLAIN ANALYZE`、或脚本含写入逻辑/副作用），执行前必须 AskUserQuestion 确认（test/k8s 环境同 k8s skill：动哪些表/数据、量级、是否可回滚）
+- **只读直接跑、写数据必须确认（任何环境都适用）**：纯查询——usql 单条 `SELECT/SHOW/DESC/DESCRIBE/PRAGMA(查询型)/EXPLAIN(不含 ANALYZE)`，或脚本/runner 内只有只读逻辑（查询/puts）——直接执行，**不需向用户确认**；usql 只读内联查询在 Claude 上由 PreToolUse hook 自动放行、免确认（其它宿主按 allowlist）。一旦涉及写（`INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT`、`PRAGMA name=值`、`EXPLAIN ANALYZE`、或脚本含写入逻辑/副作用），执行前必须向用户确认（test/k8s 环境同 k8s skill：动哪些表/数据、量级、是否可回滚）
 - 未配 script 段 / 无后端仓库 → 只允许 `.sql`（usql）；执行中遇到脚本文件停下，提示配置 runner 或改用 `.sql`
 - **多库**：`envs.<ENV>.db` 配了 `dbs: { 别名: { url, desc } }` 时，usql 目标库按 case frontmatter `dbs:` 声明的别名取 `dbs.<别名>.url`；用哪个库先看该别名的 `desc` 说明。用例 SQL 引用了别名而未声明 → 停下问用户或用 `db.url` 默认库
 - local 环境：runner 与 workdir（= repos.backend.path）取 config，**禁止猜**；runner 启动慢**不等于卡死**，不要提前杀掉重试
@@ -225,7 +238,7 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 | blocked | 环境故障：登录失败、DB 连不上、服务 5xx/超时。**不算用例失败** |
 | skipped | 用户指定跳过 |
 
-**环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止派发。若当前 `ENV` 是 test 且 config 该环境配了 `k8s` 段，先加载 `qa-powers:k8s` 查后端日志 / pod 状态定位环境原因（结论记入 run 级 result.yaml；修复类操作按该 skill 规则需用户确认），排除后可恢复则继续 run；仍无法恢复 → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。当前 `ENV` 是 local → 无 k8s，提示用户起本地服务/看本地日志定位。
+**环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止派发。若当前 `ENV` 是 test 且 config 该环境配了 `k8s` 段，且 k8s skill 已安装，先 Call the Skill tool with "k8s" 查后端日志 / pod 状态定位环境原因（结论记入 run 级 result.yaml；修复类操作按该 skill 规则需用户确认），排除后可恢复则继续 run；仍无法恢复 → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。当前 `ENV` 是 local，或 k8s skill 未安装 → 提示用户起本地服务/看本地或远程日志定位。
 
 ## 4. 收尾
 
@@ -253,6 +266,6 @@ summary:
   skipped: 0
 ```
 
-4. 向用户报告一句话结果（如 `共 2 条用例：1 通过，1 失败`），cleanup 残留告警，提示运行 `qa-powers:report` 生成报告
+4. 向用户报告一句话结果（如 `共 2 条用例：1 通过，1 失败`），cleanup 残留告警，提示 Call the Skill tool with "report" 生成报告
 
 断点续跑收尾时：run 级 result.yaml 的 summary 汇总该 run **全部** case（含 resumed-skip 的，状态沿用其已有 result.yaml，不丢历史）

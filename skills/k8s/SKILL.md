@@ -6,17 +6,28 @@ allowed-tools: Bash(ssh:*), Bash(cat:*), Bash(bash:*), Read, AskUserQuestion
 
 # k8s：远程 k8s 环境操作（经堡垒机）
 
+## 宿主约定
+
+- 版本核对（两变量都空会拼成 `/scripts/...`，禁止无守卫直接展开）：
+
+```bash
+root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[ -n "$root" ] && [ -f "$root/scripts/version-check.sh" ] && bash "$root/scripts/version-check.sh" .qa-powers/config.yaml
+```
+- 向用户确认：有结构化提问工具则用之，没有则普通问答；一次一问，中文
+- 交互式 TTY 命令：宿主 Bash 无 TTY 时给出命令让用户在本机终端自己跑（Claude 可用 `! ` 前缀）
+
 ## 0. 准备
 
-1. 读 `.qa-powers/config.yaml` 的 `envs.test.k8s` 段（双环境结构：k8s 只在 test 环境）；不存在 → 引导用户运行 `qa-powers:init`。**版本核对**：`bash "$CLAUDE_PLUGIN_ROOT/scripts/version-check.sh" .qa-powers/config.yaml` 有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）
+1. 读 `.qa-powers/config.yaml` 的 `envs.test.k8s` 段（双环境结构：k8s 只在 test 环境）；不存在 → 引导用户 Call the Skill tool with "init"。**版本核对**：见宿主约定。
 2. 拼装 JMS 通道串（个人身份从 config `envs.test.k8s.jms.user` 明文读）：
 
 ```bash
 JMS="<envs.test.k8s.jms.user>@<envs.test.k8s.nodes 里目标节点的IP>@<envs.test.k8s.jms.host>"
 ```
 
-3. config `envs.test.k8s.jms.user` 为空 → 停下，提示重跑 `qa-powers:init` 补上，值形如 `alice@root`
-4. 涉及删除/修改类操作（k8sdel、k8sedit、删 pod、改线上资源）**以及会写数据的脚本**（数据修复/迁移/删除），必须先 AskUserQuestion 确认（提问与选项一律用中文）；**纯查询/只读脚本直接跑，不需确认**（如查日志、`select`/只读 `puts`、k8slist/k8slog）
+3. config `envs.test.k8s.jms.user` 为空 → 停下，提示重跑 init 补上，值形如 `alice@root`
+4. 涉及删除/修改类操作（k8sdel、k8sedit、删 pod、改线上资源）**以及会写数据的脚本**（数据修复/迁移/删除），必须先向用户确认（提问与选项一律用中文）；**纯查询/只读脚本直接跑，不需确认**（如查日志、`select`/只读 `puts`、k8slist/k8slog）
 
 > 本 skill 是 test 环境的运维入口；跑**数据脚本**（造数/清理/验证）的默认应用是 `envs.test.script.app`（`envs.test.k8s.apps` 的某个键），下文 `<app>` 未指明时用它。
 
@@ -24,7 +35,7 @@ JMS="<envs.test.k8s.jms.user>@<envs.test.k8s.nodes 里目标节点的IP>@<envs.t
 
 - 格式固定四段 `JMS用户@系统用户@资产IP@堡垒机域名`，**别乱试变体——认证失败多次会锁号**
 - 非交互：`ssh -p <envs.test.k8s.jms.port> "$JMS" '<节点命令>'`（免菜单、免密码）
-- 交互需真实终端，加 `-t`。**Claude 的 Bash 无 TTY**，交互式命令（节点 shell / pod 内 bash / rails console）给出命令让用户用 `! ` 前缀自己跑
+- 交互需真实终端，加 `-t`。多数 agent 的 Bash 无 TTY，交互式命令（节点 shell / pod 内 bash / rails console）给出命令让用户在本机终端自己跑
 - 遇到 `Unable to use a TTY` 属预期，不是故障：改用非交互方式
 
 ## 2. pod 动态解析（每次现解析，禁止缓存 pod 名）
@@ -73,7 +84,7 @@ ssh -p <port> "$JMS" "kubectl exec -n <ns> $POD -c <container> -- <runner> -e 'p
 - runner 启动慢**不等于卡死**（Rails runner 约 1 分钟，其他类型一般更快），不要提前杀掉重试
 - 脚本含**写操作**（INSERT/UPDATE/DELETE、改文件）→ 执行前把要点给用户确认：动哪些表/数据、量级、是否可回滚；**纯只读脚本（select/puts 等查询）直接跑，不需确认**
 
-## 4. 交互式（给用户自己跑，命令前加 `! `）
+## 4. 交互式（给用户在本机终端自己跑；Claude 可加 `! ` 前缀，其它宿主把命令原样交给用户）
 
 ```bash
 ssh -t -p <port> "$JMS"                                                    # 节点 root shell
@@ -100,15 +111,15 @@ ssh -t -p <port> "$JMS" "bash -ic 'k8s <app>'"                             # 节
 
 目标节点不在当前 JMS 里：查 config `envs.test.k8s.nodes` 表取 IP，重新拼 JMS 串即可；`default_node` 是默认值。
 
-## 7. 兜底：直连不灵时走交互菜单（给用户自己跑，`! ` 前缀）
+## 7. 兜底：直连不灵时走交互菜单（给用户在本机终端自己跑）
 
-`! ssh -p <port> "<envs.test.k8s.jms.user>@<envs.test.k8s.jms.host>"` → 回车出资产列表 → 输资产名回车登录（四段格式去掉资产段即菜单模式）。
+`ssh -p <port> "<envs.test.k8s.jms.user>@<envs.test.k8s.jms.host>"` → 回车出资产列表 → 输资产名回车登录（四段格式去掉资产段即菜单模式）。
 
 ## 常见错误对照
 
 | 症状 | 原因与处理 |
 |---|---|
-| `Unable to use a TTY` | 无终端，改非交互执行，或让用户 `! ssh -t ...` 自己跑 |
+| `Unable to use a TTY` | 无终端，改非交互执行，或把 `ssh -t ...` 交给用户在本机终端跑 |
 | exec 报多容器 / 落错容器 | 漏了 `-c <container>` |
 | pod 匹配不到 | awk 与 grep 顺序反了；或 pod 非 Running；或 pod_pattern 与实际命名不符 |
 | 认证失败 / 被锁 | 四段格式被改动乱试过——逐段核对，别再重试 |

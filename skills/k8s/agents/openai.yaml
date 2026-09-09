@@ -1,0 +1,3 @@
+interface:
+  display_name: "qa-powers k8s"
+  short_description: "Remote k8s ops via JumpServer (optional)"

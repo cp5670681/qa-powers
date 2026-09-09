@@ -1,0 +1,3 @@
+interface:
+  display_name: "qa-powers run"
+  short_description: "Execute cases with playwright-cli and evidence"

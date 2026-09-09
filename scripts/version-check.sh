@@ -9,10 +9,10 @@
 set -euo pipefail
 
 config="${1:-.qa-powers/config.yaml}"
-plugin_root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+plugin_root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}}"
 plugin_json="$plugin_root/.claude-plugin/plugin.json"
 
-# 插件当前版本：CLAUDE_PLUGIN_ROOT 由 Claude Code 注入；非插件环境退回脚本自身目录
+# 插件当前版本：QA_POWERS_ROOT（任意宿主）或 CLAUDE_PLUGIN_ROOT（Claude plugin）；都没有则退回脚本自身目录
 cur=""
 if command -v jq >/dev/null 2>&1; then
   cur=$(jq -r '.version // empty' "$plugin_json" 2>/dev/null || true)
@@ -33,5 +33,5 @@ seg(){ printf '%s' "$1" | awk -F. '{print $1"."$2}'; }
 
 [ "$(seg "$cur")" = "$(seg "$cfg")" ] && exit 0
 
-echo "⚠️ qa-powers 插件版本已更新：config 记录 $cfg，当前插件 $cur（major.minor 不一致）。流程提示可能过时，建议重跑 /qa-powers:init 更新 config（仅 patch 版本差异不影响流程，无需处理）。"
+echo "⚠️ qa-powers 插件版本已更新：config 记录 $cfg，当前插件 $cur（major.minor 不一致）。流程提示可能过时，建议重跑 init 更新 config（仅 patch 版本差异不影响流程，无需处理）。"
 exit 1

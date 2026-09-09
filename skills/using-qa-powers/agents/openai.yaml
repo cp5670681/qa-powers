@@ -1,0 +1,3 @@
+interface:
+  display_name: "qa-powers"
+  short_description: "Route UI test work to init/design/run/report/k8s"

@@ -6,11 +6,22 @@ allowed-tools: Bash(playwright-cli:*), Bash(usql:*), Bash(git:*), Bash(mkdir:*),
 
 # init：初始化测试环境
 
+## 宿主约定
+
+- 插件根与版本（两变量都空会拼成 `/.claude-plugin/...`，禁止无守卫直接展开；读不到则不写 `plugin_version`）：
+
+```bash
+root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[ -n "$root" ] && [ -f "$root/.claude-plugin/plugin.json" ] && jq -r '.version' "$root/.claude-plugin/plugin.json"
+```
+- 向用户确认：有结构化提问工具（AskUserQuestion 等）则用之，没有则普通问答；一次一问，中文
+- 只读 usql / playwright-cli 自动放行仅 Claude PreToolUse hook；其它宿主按 allowlist 或确认
+
 在**被测项目根目录**（不是 qa-powers 插件仓库）执行以下流程。
 
 config 可同时配**本地(local)**与**测试(test)**两套环境，初始化时**多选**要配的环境、一次配齐，之后换环境由 `run` 开头选择、无需重新 init。共享项（浏览器、代码仓库路径）只收一次；环境专属项（base_url、登录、DB、脚本执行后端）按环境分别收集。允许只配一个环境。凭据（账号密码、DB 连接串、JMS 身份）**明文存入 config**，后续无需设置环境变量；init 会把敏感文件写入被测项目 `.gitignore` 防止误提交。
 
-**提问一律用中文**：所有 AskUserQuestion 的 question、header、选项 label 与 description 都用中文（base_url、DB、runner 等技术名词可保留英文）。
+**提问一律用中文**：向用户确认时 question、header、选项 label 与 description 都用中文（base_url、DB、runner 等技术名词可保留英文）。
 
 ## 0. 已有 config 时走增量模式
 
@@ -18,30 +29,30 @@ config 可同时配**本地(local)**与**测试(test)**两套环境，初始化�
 
 1. 读出现有配置，列给用户看（注意脱敏，只显示结构不显示值）
 2. **旧结构无法增量** → 说明需重跑 init 重新收集，先确认没有需要保留的手工改动再覆盖：① env/base_url/db/k8s 在顶层、无 `envs` 段；② 凭据字段是 `*_env` 环境变量名写法（现已改为明文直存）
-3. AskUserQuestion 确认本次要补哪些**缺失的段**（如 test 环境、k8s、notes——顶层与各环境 `notes` 键缺失都算缺失段，可增量补，不算改动已有段；`repos.backend.type` 缺失时也按第 1 节探测补上）；已有段一律不再收集、不改动
+3. 向用户确认本次要补哪些**缺失的段**（如 test 环境、k8s、notes——顶层与各环境 `notes` 键缺失都算缺失段，可增量补，不算改动已有段；`repos.backend.type` 缺失时也按第 1 节探测补上）；已有段一律不再收集、不改动
 4. 只执行与缺失段相关的收集与校验；第 4 步写文件时**合并写入**——保留全部已有内容，仅追加/更新本次收集的段，禁止整份重写
 5. 目录骨架（第 3 步）`mkdir -p` 幂等，照常执行
 
-## 1. 交互式收集信息（AskUserQuestion，一次一个问题）
+## 1. 交互式收集信息（一次一个问题）
 
 **共享项（只收一次）**：
 
 - 浏览器渠道：**先探测系统已装浏览器**（Linux/WSL：`which google-chrome google-chrome-stable msedge`；macOS：`ls /Applications | grep -E "Google Chrome|Microsoft Edge"`），探测到就直接用系统渠道（chrome/msedge，**不下载任何浏览器**）；都没有才选内置 chromium（需下载）
 - 运行模式：有头 / 无头（默认有头，便于观察执行过程）
-- 前端仓库绝对路径 + 基线分支（**探测默认分支**，main/master 自动识别：`git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` 输出 `origin/main` 则取 `main`；探测不出（无 remote HEAD 引用）或用户想用非默认基线（如 develop）→ AskUserQuestion 问）
+- 前端仓库绝对路径 + 基线分支（**探测默认分支**，main/master 自动识别：`git -C <path> symbolic-ref --short refs/remotes/origin/HEAD` 输出 `origin/main` 则取 `main`；探测不出（无 remote HEAD 引用）或用户想用非默认基线（如 develop）→ 向用户确认）
 - 后端仓库绝对路径 + 基线分支（同上探测）；无后端可跳过
-- **后端项目类型（配了后端仓库才收）**：先探测后端仓库根目录——`Gemfile` → rails、`package.json` → node、`pyproject.toml`/`requirements.txt`/`manage.py` → python；都不是或不确定 → AskUserQuestion 从 rails/node/python/other 里选。类型写入 `repos.backend.type`，后续各 skill 按它分派提示（runner 建议、schema 定义位置、密码可读的配置文件）
+- **后端项目类型（配了后端仓库才收）**：先探测后端仓库根目录——`Gemfile` → rails、`package.json` → node、`pyproject.toml`/`requirements.txt`/`manage.py` → python；都不是或不确定 → 向用户确认，从 rails/node/python/other 里选。类型写入 `repos.backend.type`，后续各 skill 按它分派提示（runner 建议、schema 定义位置、密码可读的配置文件）
 - **系统特殊注意点（notes，可选，全环境共享）**：收完共享项后问一句"这套被测系统有没有所有环境都适用的注意点"（如：列表页时间统一显示 UTC 断言先换算、导出有全局限流）；用户逐条说出则写入顶层 `notes`（自由文本列表，两环境共享），与各环境专属 notes 并存、冲突时以环境专属为准；没有则不写该键
 
-**环境选择（共享项收完后、问 base_url 之前；AskUserQuestion 多选）**：要配置哪些环境？local / test。选中几个就配几个——都选则一次 init 配齐双环境，之后换环境由 `run` 开头选择，无需重新 init。未选中的直接跳过（`envs` 只写选中的）。
+**环境选择（共享项收完后、问 base_url 之前；向用户确认，可多选）**：要配置哪些环境？local / test。选中几个就配几个——都选则一次 init 配齐双环境，之后换环境由 `run` 开头选择，无需重新 init。未选中的直接跳过（`envs` 只写选中的）。
 
-**密码收集方式（账号密码、DB 密码、JMS 身份通用）**：AskUserQuestion 的选项要求 ≥2 项且答案会留在对话里，**不要**为收密码凑选项（"Enter Password..."之类）；改用以下顺序——① 被测项目已有本地配置文件里能读到的直接读（按项目类型找：rails 看 `config/database.yml` 等、node/python 看 `.env`，读前告知用户取自哪里）；② 读不到就问用户要非敏感项（用户名等），密码请用户**直接在下一条消息里明文给**；同一批账号密码相同时问一句"是否同主账号密码"。
+**密码收集方式（账号密码、DB 密码、JMS 身份通用）**：结构化提问工具往往要求 ≥2 个选项且答案会留在对话里，**不要**为收密码凑选项（"Enter Password..."之类）；改用以下顺序——① 被测项目已有本地配置文件里能读到的直接读（按项目类型找：rails 看 `config/database.yml` 等、node/python 看 `.env`，读前告知用户取自哪里）；② 读不到就问用户要非敏感项（用户名等），密码请用户**直接在下一条消息里明文给**；同一批账号密码相同时问一句"是否同主账号密码"。
 
 **local 环境（base_url=本地地址，如 http://localhost:3000）**：
 
 - base_url
 - 登录方式（用户名密码表单 / 免登录）→ **主账号**（大部分用例都用它）：账号名（如 admin）+ 用户名、密码（明文收集，直接写入 config，作为 `auth.default`）
-- 权限类需求的多账号**不在 init 收集**：`qa-powers:design` 遇权限控制需求时查库发现账号、引导补密码，增量写入 config 的 `auth.accounts`
+- 权限类需求的多账号**不在 init 收集**：design 遇权限控制需求时查库发现账号、引导补密码，增量写入 config 的 `auth.accounts`
 - DB：**多库探测收集**——先读后端仓库数据库配置（按 `repos.backend.type`：rails 看 `config/database.yml` 各环境段、node 看 `.env`/prisma 的 `DATABASE_URL*`、python 看 settings/.env），列出代码里出现的所有库，逐个归纳用途说明（哪个是主业务库=默认库、哪个是已发布/只读库、哪个是日志/分析库）。默认库写 `db.url`，其余库用语义别名写 `db.dbs`（`{ url, desc }`，desc 写明"哪些情况用这个库"）。代码里只有单库或读不到 → 只收 `db.url`；无 DB 可跳过。密码含特殊字符需 URL 编码（同 test 环境）
 - 脚本执行后端：本地 runner（任意命令，在本地后端仓库目录内执行；rails 用 `bin/rails runner`、node 用 `node`、python 用 `python`）；无后端仓库则跳过
 - **环境特殊注意点（notes，可选）**：收完上述各项后问一句"这个环境测试执行时有没有要特别注意的点"（常见如：登录页令牌/多因子字段留空不填、某个库是只读从库禁止写入、列表页数据量大需先加筛选）；用户逐条说出则原样写入该环境 `notes`（自由文本列表，条目含英文冒号+空格时整体加引号，防止 YAML 解析成 map）；没有则不写该键
@@ -82,7 +93,7 @@ mkdir -p .qa-powers/cases .qa-powers/evidence .qa-powers/reports
 ## 4. 写 .qa-powers/config.yaml（用收集到的值；已有 config 时按第 0 节增量合并，只动本次收集的段）
 
 ```yaml
-plugin_version: <从 $CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json 读（jq -r '.version' 或 awk）；仅本插件安装后 config 与流程核对版本用，不参与任何流程逻辑>
+plugin_version: <从插件根 .claude-plugin/plugin.json 读（jq -r '.version' 或 awk）；插件根见宿主约定。仅 config 与流程核对版本用，不参与任何流程逻辑>
 browser:                 # 两环境共享
   channel: chrome        # chrome | msedge | chromium
   headed: true           # 有头模式（run 以此为浏览器模式问题的默认值，执行时仍可现场切换）
@@ -138,7 +149,7 @@ envs:
           runner: <脚本执行器>        # 任意命令（rails: bin/rails runner、node: node、python: python）；应用无脚本执行能力才删除此行
 ```
 
-注意：config **明文**存凭据（免去维护环境变量），必须已被 `.gitignore` 覆盖（见第 3 步）。登录态文件按 `auth-<env>-<account>.json` 分文件。老 config 缺 `repos.backend.type`：design/run 从已配的 runner 命令推断（含 rails→rails、node→node、python→python），推断不出按 other 处理，也可重跑 init 增量补上。`plugin_version` 记录写文件时插件的版本（从 `$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json` 读）；后续各流程（design/run/report/k8s）会核对它——若与当前插件 major.minor 不同（大/小版本升级）会提醒重跑 init，仅 patch 差异不提醒，因此**每次 init（含第 0 节增量合并）都把 `plugin_version` 更新为当前插件版本**。
+注意：config **明文**存凭据（免去维护环境变量），必须已被 `.gitignore` 覆盖（见第 3 步）。登录态文件按 `auth-<env>-<account>.json` 分文件。老 config 缺 `repos.backend.type`：design/run 从已配的 runner 命令推断（含 rails→rails、node→node、python→python），推断不出按 other 处理，也可重跑 init 增量补上。`plugin_version` 记录写文件时插件的版本（从插件根 `.claude-plugin/plugin.json` 读）；后续各流程（design/run/report/k8s）会核对它——若与当前插件 major.minor 不同（大/小版本升级）会提醒重跑 init，仅 patch 差异不提醒，因此**每次 init（含第 0 节增量合并）都把 `plugin_version` 更新为当前插件版本**。
 
 ## 5. 沉淀登录态（免登录跳过；对 config 已配账号逐个做——init 后即主账号；design 后续追加的权限账号由 run 首次用到时自动登录沉淀，无需手工）
 
@@ -153,4 +164,4 @@ envs:
 
 ## 6. 收尾
 
-输出校验结果清单（✓/✗）+ 确认 `.gitignore` 已覆盖 config 与登录态文件（凭据已明文入 config，无需设置环境变量）。全部通过后提示：可以运行 `qa-powers:design` 设计用例了；`qa-powers:run` 开头会确认用哪个环境。
+输出校验结果清单（✓/✗）+ 确认 `.gitignore` 已覆盖 config 与登录态文件（凭据已明文入 config，无需设置环境变量）。全部通过后提示：可以 Call the Skill tool with "design" 设计用例了；run 开头会确认用哪个环境。

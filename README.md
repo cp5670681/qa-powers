@@ -1,6 +1,6 @@
 # qa-powers
 
-AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直接生成可追溯的测试用例、驱动真实浏览器执行、产出带证据的测试报告。
+AI 驱动的 UI 自动化测试技能库（Claude Code / Codex / Pi 等 Agent Skills 宿主）：从需求直接生成可追溯的测试用例、驱动真实浏览器执行、产出带证据的测试报告。
 
 > **AI 负责思考，工具负责执行，Evidence 负责证明。**
 
@@ -8,15 +8,15 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 ## 它解决什么问题
 
-传统 UI 自动化要么是脆的录制回放，要么是维护成本极高的代码脚本。qa-powers 把测试流程拆成四个 Claude Code skill，另附一个可选的远程环境运维 skill（k8s），让 AI 读需求、读代码 diff、设计用例、驱动浏览器执行，同时用严格的 evidence 结构（截图 / 命令日志 / result.yaml）保证每条结论可追溯：
+传统 UI 自动化要么是脆的录制回放，要么是维护成本极高的代码脚本。qa-powers 把测试流程拆成四个 skill，另附一个可选的远程环境运维 skill（k8s），让 AI 读需求、读代码 diff、设计用例、驱动浏览器执行，同时用严格的 evidence 结构（截图 / 命令日志 / result.yaml）保证每条结论可追溯：
 
 ```
 需求（文本 / Jira / Confluence）
-  → /qa-powers:design   读 diff 做影响分析，生成用例（每个改动点至少 1 条覆盖）
-  → /qa-powers:run      playwright-cli 驱动浏览器执行，脚本路由造数/验证/清理（.sql→usql、其他脚本→本地 runner 或 k8s pod）
-  → /qa-powers:report   汇总四态统计与失败详情
+  → design   读 diff 做影响分析，生成用例（每个改动点至少 1 条覆盖）
+  → run      playwright-cli 驱动浏览器执行，脚本路由造数/验证/清理（.sql→usql、其他脚本→本地 runner 或 k8s pod）
+  → report   汇总四态统计与失败详情
 
-（可选）日常运维：/qa-powers:k8s   经堡垒机查远程 k8s 环境日志、进 pod / rails console、在容器里跑脚本、换节点；拓扑与个人身份入 config
+（可选）日常运维：k8s   经堡垒机查远程 k8s 环境日志、进 pod / rails console、在容器里跑脚本、换节点；拓扑与个人身份入 config。skills.sh 安装时可跳过
 ```
 
 核心特性：
@@ -38,38 +38,58 @@ AI 驱动的 UI 自动化测试技能库（Claude Code 插件）：从需求直�
 
 | 依赖 | 安装 | 说明 |
 |---|---|---|
-| Claude Code | https://claude.com/claude-code | 宿主 CLI |
+| 兼容 Agent Skills 的宿主 | Claude Code / Codex / Pi 等 | 任选其一；不要同时用 plugin 与 skills.sh 装两份 |
 | playwright-cli | `npm install -g @playwright/cli@latest` | 驱动浏览器；系统已装 Chrome/Edge 可直接用，无需下载 chromium |
 | usql | https://github.com/xo/usql/releases | DB 造数与断言；macOS brew 可能构建失败，推荐下 release 二进制 |
 
-### 安装插件
+### 安装
 
-```bash
-# 在 Claude Code 会话中
+两套入口，两种哲学。**Claude Code plugin** 是只读订阅，随发版更新。**[skills.sh](https://skills.sh)** 把可编辑的 skill 文件拷进项目，可勾选子集（`k8s` 可选）。不要两套都装，否则每个 skill 会出现两次。细节见 [.agents/hosts.md](.agents/hosts.md)。
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+```
 /plugin marketplace add https://github.com/cp5670681/qa-powers
 /plugin install qa-powers@qa-powers
 ```
 
-更新：`/plugin marketplace update qa-powers` 刷新源后执行 `/plugin update qa-powers@qa-powers`（脚本/CLI：`claude plugin update qa-powers@qa-powers`），按提示 `/reload-plugins` 或重开会话生效；无需卸载重装。发版靠版本号识别，仓库有新改动但版本未变时 update 会被跳过。
+更新：`/plugin marketplace update qa-powers` 后 `/plugin update qa-powers@qa-powers`（CLI：`claude plugin update qa-powers@qa-powers`），按提示 `/reload-plugins` 或重开会话。发版靠版本号识别，仓库有新改动但版本未变时 update 会被跳过。
+
+</details>
+
+<details>
+<summary><strong>Codex、Pi 及其它 agent</strong></summary>
+
+```bash
+npx skills@latest add cp5670681/qa-powers
+# 只装到 Pi：
+npx skills@latest add cp5670681/qa-powers -a pi
+```
+
+勾选需要的 skill。建议带上 `using-qa-powers`、`init`、`design`、`run`、`report`；只用本地环境可不装 `k8s`。Pi 会写到 `.pi/skills/` 或 `~/.pi/agent/skills/`。拷入后可改；更新用 `npx skills update`。非 Claude 宿主请设置 `QA_POWERS_ROOT` 为本仓库克隆路径（skills.sh 不拷 `scripts/`）；未设置则跳过 version-check，不要拼 `/scripts/version-check.sh`。
+
+</details>
 
 ## 快速开始
 
-在**被测项目根目录**开 Claude Code 会话：
+在**被测项目根目录**开宿主会话（Claude 可用 `/qa-powers:init` 等 slash；其它宿主直接说「初始化测试环境」或点对应 skill）：
 
-1. `/qa-powers:init` —— 收集被测地址、登录方式、前后端仓库路径、DB 连接（凭据明文存入 config，之后无需设置环境变量），沉淀登录态
-2. `/qa-powers:design` —— 给需求文本 / Jira key / Confluence 链接，生成 `.qa-powers/cases/<模块>/` 用例
-3. `/qa-powers:run` —— 执行并产出 `.qa-powers/evidence/<run-id>/`
-4. `/qa-powers:report` —— 生成 `.qa-powers/reports/<run-id>.md`
+1. **init** —— 收集被测地址、登录方式、前后端仓库路径、DB 连接（凭据明文存入 config，之后无需设置环境变量），沉淀登录态
+2. **design** —— 给需求文本 / Jira key / Confluence 链接，生成 `.qa-powers/cases/<模块>/` 用例
+3. **run** —— 执行并产出 `.qa-powers/evidence/<run-id>/`
+4. **report** —— 生成 `.qa-powers/reports/<run-id>.md`
 
 凭据在 init 时直接明文收集进 `.qa-powers/config.yaml`（init 会自动把该文件与登录态 `auth-*.json` 写入被测项目 `.gitignore`），无需预先设置任何环境变量。
 
 ## 目录结构
 
 ```
-skills/          4 个测试工作流 skill + 1 个远程运维 skill + 1 个入口路由
-hooks/           SessionStart 提示 hook；PreToolUse hook 自动放行 playwright-cli 命令与 usql 只读查询
-scripts/         validate.sh 插件结构自检；allow-tools.sh 权限放行 hook 脚本；version-check.sh config 版本核对
-tests/           开发用：test-allow-tools.sh / test-version-check.sh——hook 放行与版本核对回归测试；demo/ 冒烟夹具（见 CONTRIBUTING.md）
+skills/          4 个测试工作流 skill + 1 个可选远程运维 skill + 1 个入口路由；每个 skill 含 agents/openai.yaml（Codex picker）
+hooks/           Claude 专用：SessionStart 提示；PreToolUse 自动放行 playwright-cli 与 usql 只读查询
+scripts/         validate.sh；allow-tools.sh；version-check.sh；link-skills.sh（开发软链）
+.agents/         多宿主约定（hosts.md）与 invocation 说明
+tests/           hook / 版本核对回归；demo/ 冒烟夹具（见 CONTRIBUTING.md）
 ```
 
 ## 安全声明
