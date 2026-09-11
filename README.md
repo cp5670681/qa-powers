@@ -67,7 +67,17 @@ npx skills@latest add cp5670681/qa-powers
 npx skills@latest add cp5670681/qa-powers -a pi
 ```
 
-勾选需要的 skill。建议带上 `using-qa-powers`、`init`、`design`、`run`、`report`；只用本地环境可不装 `k8s`。Pi 会写到 `.pi/skills/` 或 `~/.pi/agent/skills/`。拷入后可改；更新用 `npx skills update`。非 Claude 宿主请设置 `QA_POWERS_ROOT` 为本仓库克隆路径（skills.sh 不拷 `scripts/`）；未设置则跳过 version-check，不要拼 `/scripts/version-check.sh`。
+勾选需要的 skill。建议带上 `using-qa-powers`、`init`、`design`、`run`、`report`；只用本地环境可不装 `k8s`。Pi 会写到 `.pi/skills/` 或 `~/.pi/agent/skills/`。拷入后可改。非 Claude 宿主请设置 `QA_POWERS_ROOT` 为本仓库克隆路径（skills.sh 不拷 `scripts/`）；未设置则跳过 version-check，不要拼 `/scripts/version-check.sh`。
+
+`add` 是安装（可再勾选子集），**不会**当作更新已装 skill。仓库有新版本时用：
+
+```bash
+npx skills update          # 已装的全部
+npx skills update -p       # 仅当前项目
+npx skills update -g       # 仅全局（~/.pi 等）
+```
+
+再跑一遍 `add … -a pi` 是重装：可能覆盖本地改过的拷贝，也可能跳过已存在目录，不是官方更新路径。
 
 </details>
 

@@ -17,7 +17,7 @@ qa-powers 的正文是 `skills/*/SKILL.md`（Agent Skills 标准）。Claude Cod
 npx skills@latest add cp5670681/qa-powers
 ```
 
-安装时可选 skill。`k8s` 仅远程测试环境需要，可跳过。入口路由 `using-qa-powers` 建议始终安装。拷文件后自行编辑；更新用 `npx skills update`。
+安装时可选 skill。`k8s` 仅远程测试环境需要，可跳过。入口路由 `using-qa-powers` 建议始终安装。拷文件后自行编辑。`add` 只负责安装；已装 skill 拉最新用 `npx skills update`（见 README）。
 
 不要两套同时装，否则每个 skill 会出现两次。
 
