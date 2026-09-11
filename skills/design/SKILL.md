@@ -34,7 +34,7 @@ root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 
 读 `.qa-powers/config.yaml` 的 repos 段。**版本核对**：见宿主约定。同时读顶层 `notes` 与各环境 `notes`（特殊注意点，如时间显示 UTC 断言先换算、大数据量列表先加筛选），写用例步骤与预期值时遵守。**先问特性分支，不依赖 checkout**：向用户确认，逐个仓库问「本次需求测哪个分支的改动？」，选项给「当前 checkout 分支（`<branch --show-current>` 的值）」并说明可直接输入分支名（如 `feature/ord-1234`）；前后端分支通常同名，先问前端再问后端是否同分支。
 
-对每个仓库，用用户指定的分支引用做只读 diff（**绝不 checkout**）：
+对每个仓库，用用户指定的分支引用做只读 diff（**不 checkout、不改 `repos.*` 源码**；Write 只落 `.qa-powers/**` 与用户确认后的 config 账号追加）：
 
 ```bash
 git -C <path> branch --show-current            # 只读，绝不 checkout；仅记录当前环境，不参与 diff

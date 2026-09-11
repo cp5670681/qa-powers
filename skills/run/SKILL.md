@@ -22,11 +22,12 @@ root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 ## 硬约束（违反即执行错误）
 
 1. **业务意图固定，执行细节允许适配**：按 case 步骤执行；selector 可以修正（快照 ref 失效时按语义重新定位，如 getByRole 等价元素），但**禁止改变业务路径**（如绕过下单 UI 直接访问成功页）
-2. **绝不 checkout 被测仓库**
+2. **不改被测仓工作区与 VCS 状态**（细则见硬约束 7）
 3. 密码/连接串从 config 明文读；commands.log 与对话输出不得回显密码明文
 4. **页面 URL 禁止猜测**：从 config `repos.frontend.path` 的路由代码推导（router 配置 / 页面组件的 route 定义），必要时前后端代码都可参考（如定位元素结构、确认接口行为），但只读，不修改
 5. **并发模式附加约束**：并发执行中禁止 `state-save`（多会话共读登录态文件，写会互相踩）；DB 写操作（造数/清理）只允许操作用例自身的独立数据（自己的 setup 造出的、带模块标记的记录），跨用例共享数据（同一行/同一库存/同一账号互斥状态）靠 `depends_on` 串行化——与 design 的依赖判定口径一致：无 `depends_on` = 各自独立数据、可并发；每个 subagent 只能操作自己的 `-s=qap-<case-id>` 会话
 6. **提问一律用中文**：向用户确认时 question、header、选项 label 与 description 都用中文（base_url、DB、k8s、runner 等技术名词可保留英文）；向用户汇报结果也用中文
+7. **测试职责：观察与取证，不修产品**。失败记 `failed` + 证据，禁止为变绿改用例预期。可写路径仅 `.qa-powers/**`。禁止三类变异：①产品源码（`repos.*` 下非 `.qa-powers/`）②会改历史/分支/远程的 git（commit / push / checkout / switch / merge 等）③对测试环境做部署或改集群资源。主会话收窄子 agent 工具（`.agents/hosts.md`）；收不了则顺序执行、不派默认可写产品仓的 worker。闸门：§0 基线 + §4 相对增量，禁止把「porcelain 非空」当变异
 
 ## 0. 准备
 
@@ -34,7 +35,7 @@ root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 
 1. 读 `.qa-powers/config.yaml`；**版本核对**：见宿主约定。有输出则把警告转告用户（中文），流程继续（仅提示、不阻断）
 2. **选环境（硬性步骤）**：读 `active_env`，向用户确认本次跑哪个 `envs` 键（local/test）或切到另一个；config 只配了一个环境时直接用它，不再问。确定 `ENV` 后，下文所有 base_url / 登录态 / DB URL / 脚本后端一律从 `envs.<ENV>` 取；顶层 `notes`（全环境共享）与 `envs.<ENV>.notes`（环境专属，冲突时以环境专属为准）有值时逐条读出，作为本次执行的注意事项全程遵守（登录/造数/断言/清理/页面操作先过一遍 notes）。记入 commands.log 与 run 级 result.yaml（`env: <ENV>`）
-3. `run_id=$(date +%Y-%m-%d-%H%M%S)`；`mkdir -p .qa-powers/evidence/$run_id`。**断点续跑**：若最新 run（evidence 目录名按 `YYYY-MM-DD-HHMMSS` 字典序取最大，即最新）下存在未完成 case（case 目录无 result.yaml），先问用户「继续该 run（复用其 run_id 与 evidence 目录，跳过已有终态 result.yaml 的 case，从第一个未完成的接着跑）还是新开 run」
+3. `run_id=$(date +%Y-%m-%d-%H%M%S)`；`mkdir -p .qa-powers/evidence/$run_id`。**断点续跑**：若最新 run（evidence 目录名按 `YYYY-MM-DD-HHMMSS` 字典序取最大，即最新）下存在未完成 case（case 目录无 result.yaml），先问用户「继续该 run（复用其 run_id 与 evidence 目录，跳过已有终态 result.yaml 的 case，从第一个未完成的接着跑）还是新开 run」。**产品仓基线**（新开 run 必拍；续跑沿用该 run 已有基线，没有则补拍）：对每个 `repos.*.path`，`git -C <path> status --porcelain` 写入 `evidence/$run_id/repo-baseline/<repo-key>.txt`（空也写）。§4 只比相对此文件的新增行；忽略 `.qa-powers/**` 与仓库根残留 png/临时截图
 4. **建立路由映射**：
    - 先查 `cases/<模块>/meta.yaml` 是否已沉淀 `routes:`（「页面名 → 完整 URL」映射，见下）→ 有则直接复用，不再推导
    - 无则用 Grep/Glob 在前端仓库路由配置中查目标页面的 route 定义推导。**先确认 router mode**（`src/router/index.js` 的 `mode:` 字段）：`hash` 模式下完整 URL 带 `#/` 前缀（如 `http://host/#/works/...`），history 模式不带——拼错 `#/` 会 404。相对 path（如 `total_package_progress_remark_statistics`）要结合父路由前缀（如 `/works`）拼成完整路径
@@ -194,6 +195,7 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 | ref 过期 | `Ref xxx not found` | 重新 snapshot 按语义定位（§1b 重试 1 次） |
 | 误创建数据 | 校验用例意外写入 | 见 §1c「意外成功」：查库 → 清理 → 注明 → 复测 |
 | local 环境服务没起 | 页面 5xx/连接拒绝 | 本地环境无 k8s，提示用户起服务/看本地日志；不是用例失败（blocked） |
+| worker 改产品代码/推测试 | 相对 §0 基线出现非忽略路径，或测试环境被部署/改集群 | 硬约束 7：只取证；§4 相对基线增量才 blocked，porcelain 非空不够 |
 
 ## 2. 并发执行（依赖图调度，参考 superpowers subagent-driven-development 模式）
 
@@ -208,21 +210,26 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 ### b. 派发循环
 
 - **账号预沉淀（派发前）**：汇总入选 case 声明的全部 `account`，state_file 缺失或未登录的，先在主会话按 §1 多账号切换的自动登录流程逐个沉淀——并发执行中禁止 state-save，必须提前备好
-- **生成共享上下文（派发前）**：写 `.qa-powers/evidence/<run-id>/context.md`，含 ENV（base_url、登录态文件路径、浏览器 channel/headless、顶层 notes 与 `envs.<ENV>.notes` 注意点逐条）、DB DSN 列表（按各 case frontmatter `dbs:` 声明从 `envs.<ENV>.db` 取，含多库别名及 desc）、路由映射、会话隔离约定（`-s=qap-<case-id>`）、执行协议（§1b/c/d）。subagent prompt 只需引用该文件 + case 全文/测试数据，不再逐条重复环境信息（减少写错与冗长）
+- **生成共享上下文（派发前）**：写 `.qa-powers/evidence/<run-id>/context.md`。子 agent **没有**主会话已加载的 `run` skill，不读 AGENTS.md 也不继承硬约束——只看见本文件 + spawn prompt。context.md 必须含：
+  1. **职责块（原样写入，禁止摘要）**：你是测试 worker，只跑这一条 case、只取证。可写路径仅 `.qa-powers/**`。禁止三类变异：改产品源码；会改历史/分支/远程的 git；对测试环境做部署或改集群资源。禁止为变绿改用例预期或业务路径。失败写 `failed` + 截图/网络/DB，不要修产品。不要再 spawn 能写产品代码的子 agent。
+  2. ENV（base_url、登录态文件路径、浏览器 channel/headless、顶层 notes 与 `envs.<ENV>.notes` 注意点逐条）
+  3. DB DSN 列表（按各 case frontmatter `dbs:` 声明从 `envs.<ENV>.db` 取，含多库别名及 desc）
+  4. 路由映射、会话隔离（`-s=qap-<case-id>`）、执行协议（§1b/c/d）
+  spawn prompt **必须把职责块贴在最前**（可写「见 context.md 职责块」但文件里必须有全文），再引用 context.md 其余段 + case 全文/测试数据，不要让 worker「去读 SKILL.md」
 - **滚动派发（保持 N 并发，不等整批）**——参考 p-queue / worker pool 的并发队列语义，任务完成事件触发补位：
    - **机制（关键）**：subagent 一律用 `run_in_background: true` 派发（Agent 工具后台运行），完成后自动收到 task-notification，主会话**不被阻塞**。这是滚动与「分批等整批」的分水岭——阻塞式 Agent 调用一次派 N 个后必须等全部返回，快的会空等慢的（实测 case-01 20 分钟期间，仅 6 分钟的第二批 case 完全没开始）。宿主 Agent 工具不支持 `run_in_background` 时退回阻塞式派发、按批等整批（机制降级，不改变正确性）
   - **初始派发**：一次派发 `min(N, 待跑 case 数)` 个（同一响应内多个 Agent 调用 = 并行）
   - **补位**：每收到一个完成通知 → 校验该 case 的 result.yaml → 立即从「pending 且无 blockedBy」中按 priority 取下一个补派，**维持在跑 ≤ N**；禁止等整批完成再派下一批
   - **结束**：pending 空且无在跑 → 进入收尾（§4）。等待期间不轮询、不 sleep（完成通知自动到达）；确需等时用 bounded wait，间隔只发一行状态
   - **故障**：连续 2 个在跑用例同类环境原因 blocked → 停止补派（§2c）
-- 每条 case spawn 一个 general-purpose subagent（一次消息里可同时派多个），prompt **必须自包含**：
+- 每条 case spawn **一个测试 worker**（一次消息里可同时派多个）。能力：读文件、有限 bash（playwright-cli / usql / 远程 exec 跑用例脚本）、写入 `.qa-powers/**`。**不要**用默认可改任意仓库的 worker；主会话按 `.agents/hosts.md` 收窄（不要把该文件写进 worker prompt）。prompt **必须自包含**：
   1. 用例全文 + 测试数据（具体 ID/账号等，subagent 没有主会话上下文）
   2. **ENV**（`envs.<ENV>` 的 base_url、登录态文件路径、浏览器 channel/headless 选择）、脚本后端（local：`envs.local.script.runner`；test：`envs.<ENV>.script.app` 及其 k8s runner）、DB DSN（引用 context.md 或按 case frontmatter `dbs:` 给出全部所需库）
   3. **会话隔离**：所有 playwright-cli 命令一律带 `-s=qap-<case-id>`，禁止操作其他会话
   4. 执行协议：snapshot→按语义操作→重试 1 次；三层断言（快照/网络/查库）结论以下层为准；瞬态断言降级；校验用例意外成功先查库；截图用**绝对路径**写入自己的 `.qa-powers/evidence/<run-id>/<case-id>/screenshots/`（同 §1b 第 5 点，禁止相对路径）；**探索成功后把稳定命令沉淀到 `cases/<模块>/<case-id>.replay.sh`**（同 §1b 录制规则，下次自动回放）；结束幂等关闭自己的会话（close 报 not open 可忽略）
   5. 产出：按 case 级 result.yaml 模板写入 `evidence/<run-id>/<case-id>/result.yaml`，并在返回消息里报告一行结果摘要
-  6. 禁止：state-save、checkout 被测仓库、改用例业务路径
-- subagent 返回后：校验 result.yaml 存在且结构合法（缺失/畸形 → blocked，reason 注明 subagent 未产出有效结果）；**核对证据目录截图齐全、被测仓库根无残留 png、replay.sh 已生成**（replay.sh 缺失 → 提醒补沉淀，不改变用例状态）；TaskUpdate 完成，释放后继依赖
+  6. 禁止（与 context.md 职责块一致，prompt 里再贴一遍，不要只写「遵守 skill」）：state-save、三类变异（产品源码 / 改历史或分支或远程的 git / 部署或改集群）、改用例业务路径或预期口径。失败只取证，不修产品
+- subagent 返回后：校验 result.yaml 存在且结构合法（缺失/畸形 → blocked，reason 注明 subagent 未产出有效结果）；**核对证据目录截图齐全、被测仓库根无残留 png、replay.sh 已生成**（replay.sh 缺失 → 提醒补沉淀，不改变用例状态）。**不要**在多 worker 并行时用全仓 `git status` 给单条 case 定罪（脏树/兄弟 worker 会误杀）；变异检测只在 §4 相对 §0 基线做。TaskUpdate 完成，释放后继依赖
 
 ### c. 故障与收束
 
@@ -238,12 +245,15 @@ cleanup:              # cleanup 失败或执行中误创建并已清理时填
 | blocked | 环境故障：登录失败、DB 连不上、服务 5xx/超时。**不算用例失败** |
 | skipped | 用户指定跳过 |
 
-**环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止派发。若当前 `ENV` 是 test 且 config 该环境配了 `k8s` 段，且 k8s skill 已安装，先 Call the Skill tool with "k8s" 查后端日志 / pod 状态定位环境原因（结论记入 run 级 result.yaml；修复类操作按该 skill 规则需用户确认），排除后可恢复则继续 run；仍无法恢复 → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。当前 `ENV` 是 local，或 k8s skill 未安装 → 提示用户起本地服务/看本地或远程日志定位。
+**环境故障处理**：连续 2 条 case 因同类环境原因 blocked → 停止派发。若当前 `ENV` 是 test 且 config 该环境配了 `k8s` 段，且 k8s skill 已安装，先 Call the Skill tool with "k8s" **只读**查日志 / pod 状态（结论记入 run 级 result.yaml）。诊断路径不做部署、不改集群；用户未明确要求运维则不修复。排除后可恢复则继续 run；仍无法恢复 → 停止 run，剩余 case 全部标 blocked（reason 同），直接进入收尾。当前 `ENV` 是 local，或 k8s skill 未安装 → 提示用户起本地服务/看本地或远程日志定位。
 
 ## 4. 收尾
 
 1. `playwright-cli tracing-stop`、`playwright-cli close`
-2. **核对证据完整性**：每个 case 证据目录截图齐全；`git status` 检查被测仓库根无残留 png/临时文件（subagent 截图误落根目录的移到证据目录或删除）。缺截图/残留不改变用例状态，但收尾向用户一并说明
+2. **核对证据完整性 + 产品仓闸门**：每个 case 证据目录截图齐全。对 config 每个 `repos.*.path`，把当前 `git -C <path> status --porcelain` 与 `evidence/$run_id/repo-baseline/<repo-key>.txt` 逐行比较（只看当前有、基线没有的行）：
+   - 路径属于 `.qa-powers/**`，或仓库根残留 png/临时截图 → 截图挪到 evidence 或删除，**不**算变异、不改变用例状态
+   - 其余新增行 → 相对基线的产品仓变异。**本次 run 实际执行过的 case 只有 1 条** → 该 case **blocked**，reason：`worker mutated product repo`。多条则 **run 级记一次**（`env_diagnosis` 写变异与 `git diff --stat`），不把已 passed 的 case 全改成 blocked。向用户列出增量，**不要 revert**
+   缺基线文件 → 补拍后再比，不要用「porcelain 非空」代替。缺截图不改变用例状态，但收尾向用户说明
 3. 写 run 级 `evidence/$run_id/result.yaml`：
 
 ```yaml

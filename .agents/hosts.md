@@ -37,6 +37,18 @@ root="${QA_POWERS_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 `root` 空或脚本不存在 → 跳过，不阻断。读 `plugin.json` 版本同样：`[ -n "$root" ] && [ -f "$root/.claude-plugin/plugin.json" ]` 才 `jq`，否则不写 `plugin_version`。
 - PreToolUse 自动放行只读 usql / playwright-cli **仅 Claude hook**。其它宿主按各自 allowlist 或每次确认。
 
+## 测试 worker 工具收窄（宿主适配，流程在 run skill）
+
+`run` 并发 worker 的职责与可写路径写在 `skills/run/SKILL.md` 硬约束 7 / §2b / §4。各宿主把「收窄」落到工具层（skill 正文不写死某家 API）：
+
+| 宿主 | 做法 |
+|---|---|
+| Claude Code | spawn 时不要给对被测 `repos.*` 的 Write/Edit；Bash 拦住会改历史/分支/远程的 git 与部署/改集群。`allowed-tools` 只约束加载了该 skill 的会话，**子 Task 默认仍可能带全套工具**，必须在派发参数里再收一刀 |
+| Codex | 走 sandbox / approval；子任务不要开可写 exec。`agents/openai.yaml` 不管权限 |
+| Pi | 不要派默认可写任意仓的 worker。专用 agent + `--tools` allowlist（read/grep/ls + bash）；Write/Edit 仅 `.qa-powers/**`；deny 会改历史/分支/远程的 git 与部署/改集群 |
+
+收不了工具 → 顺序执行，不要派能改产品仓的 worker。环境侧（只读 git remote、k8s 无 apply）不在 skill 里 enforce，由使用方配置。
+
 ## 调用其它 skill
 
 写 `Call the Skill tool with "run"`，不要写 `/qa-powers:run`（那是 Claude slash 语法）。Skill 工具一次一个名字。
